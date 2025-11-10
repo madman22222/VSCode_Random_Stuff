@@ -42,6 +42,7 @@ import zipfile
 import platform
 import tempfile
 import subprocess
+from engine_manager import EngineManager
 
 # Map pieces to Unicode symbols for display
 PIECE_UNICODE = {
@@ -117,6 +118,8 @@ class ChessGUI:
         self.ai = SimpleAI(depth=3)
         self.engine = None
         self.engine_enabled = False
+        # engine manager handles downloads, verification and process lifecycle
+        self.engine_manager = EngineManager(os.path.dirname(__file__))
         self.buttons = {}
         self.selected = None
         self.piece_images = None
@@ -284,10 +287,10 @@ class ChessGUI:
         # small delay to make AI feel more human
         time.sleep(0.2)
         move = None
-        if self.engine_enabled and self.engine is not None:
+        if self.engine_enabled and self.engine_manager and getattr(self.engine_manager, 'engine', None) is not None:
             try:
                 tm = 0.05 * max(1, self.depth_var.get())
-                result = self.engine.play(self.board, chess.engine.Limit(time=tm))
+                result = self.engine_manager.play(self.board, chess.engine.Limit(time=tm))
                 move = result.move
             except Exception:
                 move = None
@@ -347,6 +350,9 @@ class ChessGUI:
             turn = 'White' if self.board.turn == chess.WHITE else 'Black'
             self.status.configure(text=f'{turn} to move')
 
+        # enable/disable controls depending on game state
+        self.update_controls_state()
+
     def on_depth_change(self, val):
         """Handler for depth scale changes."""
         try:
@@ -399,25 +405,18 @@ class ChessGUI:
             if not path:
                 messagebox.showerror('Engine', 'No engine path provided')
                 return
-            try:
-                # try to start engine
-                self.engine = chess.engine.SimpleEngine.popen_uci(path)
+            ok = self.engine_manager.start(path)
+            if ok:
                 self.engine_enabled = True
                 self.engine_toggle.configure(text='Use Engine: On')
-            except Exception as e:
-                messagebox.showerror('Engine', f'Failed to start engine: {e}')
-                self.engine = None
+            else:
+                messagebox.showerror('Engine', 'Failed to start engine (see logs)')
                 self.engine_enabled = False
         else:
-            # disable
+            # disable via EngineManager
             try:
-                if self.engine:
-                    try:
-                        self.engine.quit()
-                    except Exception:
-                        pass
+                self.engine_manager.stop()
             finally:
-                self.engine = None
                 self.engine_enabled = False
                 self.engine_toggle.configure(text='Use Engine: Off')
 
@@ -544,6 +543,35 @@ class ChessGUI:
         except Exception:
             pass
 
+    def update_controls_state(self):
+        """Enable or disable certain controls when the game is over."""
+        try:
+            disabled = 'disabled' if self.board.is_game_over() else 'normal'
+            # depth scale
+            try:
+                self.depth_scale.configure(state=disabled)
+            except Exception:
+                pass
+            # engine buttons
+            try:
+                self.detect_button.configure(state=disabled)
+            except Exception:
+                pass
+            try:
+                self.download_button.configure(state=disabled)
+            except Exception:
+                pass
+            try:
+                self.verify_button.configure(state=disabled)
+            except Exception:
+                pass
+            try:
+                self.engine_toggle.configure(state=disabled)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
     def save_pgn(self):
         # build PGN from current game
         game = chess.pgn.Game()
@@ -578,146 +606,29 @@ class ChessGUI:
             messagebox.showerror('Error', f'Failed to load PGN: {e}')
 
     def detect_engine(self):
-        path = shutil.which('stockfish')
+        path = self.engine_manager.detect()
         if path:
             self.engine_path_var.set(path)
             messagebox.showinfo('Detected', f'Found stockfish at {path}')
         else:
-            messagebox.showinfo('Not found', 'Stockfish not found in PATH. Please install and/or provide path.')
+            messagebox.showinfo('Not found', 'Stockfish not found (engines/ or PATH). Please install and/or provide path.')
 
     def download_engine(self):
-        """Download a Stockfish binary from GitHub releases and extract to engines/stockfish(.exe).
-
-        Strategy: query GitHub releases for the official-stockfish/Stockfish repo, pick a Windows asset if available.
-        """
-        repo_api = 'https://api.github.com/repos/official-stockfish/Stockfish/releases/latest'
-        headers = {'Accept': 'application/vnd.github.v3+json'}
-        token = self.github_token.get().strip() if getattr(self, 'github_token', None) else ''
-        if token:
-            headers['Authorization'] = f'token {token}'
-
-        try:
-            req = urllib.request.Request(repo_api, headers=headers)
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.load(resp)
-        except Exception as e:
-            messagebox.showerror('Download failed', f'Could not query GitHub API: {e}')
-            return
-
-        assets = data.get('assets', []) if isinstance(data, dict) else []
-        if not assets:
-            messagebox.showerror('Download failed', 'No release assets found for Stockfish.')
-            return
-
-        # determine platform preference
+        # simple UI wrapper around EngineManager download
         prefer = self.platform_var.get() if getattr(self, 'platform_var', None) else 'auto'
-        sysplat = platform.system().lower()
-        if prefer == 'auto':
-            if sysplat.startswith('win'):
-                prefer = 'windows'
-            elif sysplat.startswith('darwin'):
-                prefer = 'macos'
-            else:
-                prefer = 'linux'
-
-        candidate = None
-        candidate_name = None
-        # heuristics: look for asset names containing platform keywords and zip executables
-        for a in assets:
-            name = a.get('name', '').lower()
-            url = a.get('browser_download_url')
-            if not url:
-                continue
-            if prefer == 'windows' and ('win' in name or 'windows' in name) and name.endswith('.zip'):
-                candidate = url
-                candidate_name = name
-                break
-            if prefer == 'macos' and ('mac' in name or 'osx' in name or 'macos' in name) and name.endswith('.zip'):
-                candidate = url
-                candidate_name = name
-                break
-            if prefer == 'linux' and ('linux' in name) and name.endswith('.zip'):
-                candidate = url
-                candidate_name = name
-                break
-
-        # fallback: any zip
-        if not candidate:
-            for a in assets:
-                name = a.get('name', '').lower()
-                url = a.get('browser_download_url')
-                if name.endswith('.zip'):
-                    candidate = url
-                    candidate_name = name
-                    break
-
-        if not candidate:
-            messagebox.showerror('Download failed', 'No downloadable zip asset found for the latest Stockfish release.')
-            return
-
-        proceed = messagebox.askyesno('Download Stockfish', f'Download Stockfish asset:\n{candidate_name}\n\nProceed?')
+        token = self.github_token.get().strip() if getattr(self, 'github_token', None) else ''
+        proceed = messagebox.askyesno('Download Stockfish', 'Download Stockfish release from GitHub releases?\nProceed?')
         if not proceed:
             return
-
-        engines_dir = os.path.join(os.path.dirname(__file__), 'engines')
-        os.makedirs(engines_dir, exist_ok=True)
-
-        try:
-            tmpf = tempfile.NamedTemporaryFile(delete=False)
-            tmp_path = tmpf.name
-            tmpf.close()
-            # download with headers (token if provided)
-            req = urllib.request.Request(candidate, headers=headers)
-            with urllib.request.urlopen(req, timeout=60) as resp, open(tmp_path, 'wb') as out:
-                shutil.copyfileobj(resp, out)
-
-            # extract zip and find engine executable
-            with zipfile.ZipFile(tmp_path, 'r') as z:
-                z.extractall(engines_dir)
-
-            os.unlink(tmp_path)
-
-            # search for stockfish executable in extracted files
-            exe_name = 'stockfish'
-            if platform.system().lower().startswith('windows'):
-                exe_name = 'stockfish.exe'
-
-            found = None
-            for root, dirs, files in os.walk(engines_dir):
-                for f in files:
-                    if f.lower().startswith('stockfish') and (f.lower() == exe_name or f.lower().endswith('.exe') or 'stockfish' in f.lower()):
-                        candidate_path = os.path.join(root, f)
-                        dest = os.path.join(engines_dir, exe_name)
-                        try:
-                            shutil.copyfile(candidate_path, dest)
-                            found = dest
-                            break
-                        except Exception:
-                            continue
-                if found:
-                    break
-
-            if not found:
-                messagebox.showerror('Download failed', f'Downloaded and extracted, but no Stockfish executable found in {engines_dir}.')
-                return
-
-            # make sure executable bit set (POSIX)
-            try:
-                os.chmod(found, 0o755)
-            except Exception:
-                pass
-
-            self.engine_path_var.set(found)
-            messagebox.showinfo('Downloaded', f'Stockfish downloaded to {found}. You can now click Use Engine.')
-        except Exception as e:
-            messagebox.showerror('Download failed', f'Failed to download or extract Stockfish: {e}')
+        found = self.engine_manager.download_stockfish(prefer_platform=prefer, token=token)
+        if not found:
+            messagebox.showerror('Download failed', 'Failed to download or extract Stockfish — check network or token.')
             return
+        self.engine_path_var.set(found)
+        messagebox.showinfo('Downloaded', f'Stockfish downloaded to {found}. You can now click Use Engine.')
 
     def verify_engine(self):
-        """Launch the engine binary and request a short move to verify it responds.
-
-        Shows result via messagebox.
-        """
+        """Wrapper that delegates verification to EngineManager and reports results to the UI."""
         path = self.engine_path_var.get()
         if not path:
             messagebox.showerror('Verify failed', 'No engine path provided')
@@ -728,59 +639,22 @@ class ChessGUI:
 
         retries = max(1, int(self.verify_retries.get())) if hasattr(self, 'verify_retries') else 2
         timeout = float(self.verify_timeout.get()) if hasattr(self, 'verify_timeout') else 0.05
+        backoff = float(self.backoff_max.get()) if hasattr(self, 'backoff_max') else 5.0
+        strategy = getattr(self, 'backoff_var', None) and self.backoff_var.get() or 'linear'
+        auto_dl = bool(self.auto_download_var.get()) if hasattr(self, 'auto_download_var') else False
 
-        last_err = None
-        tried_download = False
-        base_backoff = 0.5
-        for attempt in range(1, retries + 1):
-            try:
-                eng = chess.engine.SimpleEngine.popen_uci(path)
-                b = chess.Board()
-                res = eng.play(b, chess.engine.Limit(time=timeout))
-                try:
-                    eng.quit()
-                except Exception:
-                    pass
-                if res is None or not hasattr(res, 'move') or res.move is None:
-                    last_err = 'Engine started but did not return a move'
-                else:
-                    info = self._probe_engine_identity(path)
-                    msg = f'Engine responded with move: {res.move} (attempt {attempt}/{retries})'
-                    if info:
-                        msg += f' — {info}'
-                    messagebox.showinfo('Verify OK', msg)
-                    if hasattr(self, 'verify_log'):
-                        self.verify_log.insert(tk.END, f'OK: {msg}')
-                    return
-            except Exception as e:
-                last_err = str(e)
-                if hasattr(self, 'verify_log'):
-                    self.verify_log.insert(tk.END, f'Attempt {attempt}: error: {e}')
-
-            # If enabled, attempt to auto-download once (before exhausting all retries)
-            if self.auto_download_var.get() and not tried_download:
-                tried_download = True
-                try:
-                    self.download_engine()
-                    # if download_engine set path, update local variable
-                    path = self.engine_path_var.get() or path
-                    # if no path after download, continue retry loop
-                except Exception as e:
-                    last_err = f'Auto-download failed: {e}'
-
-            # compute backoff wait
-            if attempt < retries:
-                strategy = getattr(self, 'backoff_var', None) and self.backoff_var.get() or 'linear'
-                max_wait = getattr(self, 'backoff_max', None) and float(self.backoff_max.get()) or 5.0
-                if strategy == 'constant':
-                    wait = min(max_wait, base_backoff)
-                elif strategy == 'exponential':
-                    wait = min(max_wait, base_backoff * (2 ** (attempt - 1)))
-                else:  # linear
-                    wait = min(max_wait, base_backoff * attempt)
-                time.sleep(wait)
-
-        messagebox.showerror('Verify failed', f'Engine verification failed after {retries} attempts: {last_err}')
+        ok, msg, found_path = self.engine_manager.verify_engine(path, retries=retries, timeout=timeout, auto_download=auto_dl, prefer_platform=self.platform_var.get(), backoff=strategy, max_wait=backoff, token=self.github_token.get().strip())
+        if ok:
+            # update path if engine manager downloaded a new one
+            if found_path:
+                self.engine_path_var.set(found_path)
+            messagebox.showinfo('Verify OK', msg)
+            if hasattr(self, 'verify_log'):
+                self.verify_log.insert(tk.END, f'OK: {msg}')
+        else:
+            if hasattr(self, 'verify_log'):
+                self.verify_log.insert(tk.END, f'ERR: {msg}')
+            messagebox.showerror('Verify failed', msg)
 
     def _probe_engine_identity(self, path: str) -> str:
         """Run the engine with a short UCI handshake to extract id name/author.
