@@ -18,7 +18,11 @@ import threading
 import time
 import shutil
 import os
-from PIL import Image, ImageTk
+try:
+    from PIL import Image, ImageTk
+except Exception:
+    Image = None
+    ImageTk = None
 import urllib.request
 import json
 import zipfile
@@ -300,6 +304,93 @@ class ChessGUI:
         else:
             turn = 'White' if self.board.turn == chess.WHITE else 'Black'
             self.status.configure(text=f'{turn} to move')
+
+    def on_depth_change(self, val):
+        """Handler for depth scale changes."""
+        try:
+            d = int(self.depth_var.get())
+            self.ai.depth = max(1, d)
+        except Exception:
+            pass
+
+    def load_piece_images(self):
+        """Try to load PNG piece images from chess/assets/. If Pillow isn't present or files
+        are missing, fall back to Unicode glyphs.
+        """
+        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
+        imgs = {}
+        try:
+            for sym in ['P','N','B','R','Q','K','p','n','b','r','q','k']:
+                # try filename patterns: wp.png, wn.png, ... and uppercase/lowercase
+                fname = None
+                if sym.isupper():
+                    short = 'w' + sym.lower()
+                else:
+                    short = 'b' + sym.lower()
+                for candidate in (f'{short}.png', f'{sym}.png'):
+                    path = os.path.join(assets_dir, candidate)
+                    if os.path.exists(path):
+                        fname = path
+                        break
+                if not fname:
+                    continue
+                try:
+                    im = Image.open(fname).convert('RGBA')
+                    im = im.resize((48, 48), Image.LANCZOS)
+                    imgs[sym] = ImageTk.PhotoImage(im)
+                except Exception:
+                    # skip if Pillow missing or image invalid
+                    imgs = {}
+                    break
+        except Exception:
+            imgs = {}
+
+        if imgs:
+            self.piece_images = imgs
+        else:
+            self.piece_images = None
+
+    def toggle_engine(self):
+        """Enable or disable using the external engine."""
+        if not self.engine_enabled:
+            path = self.engine_path_var.get()
+            if not path:
+                messagebox.showerror('Engine', 'No engine path provided')
+                return
+            try:
+                # try to start engine
+                self.engine = chess.engine.SimpleEngine.popen_uci(path)
+                self.engine_enabled = True
+                self.engine_toggle.configure(text='Use Engine: On')
+            except Exception as e:
+                messagebox.showerror('Engine', f'Failed to start engine: {e}')
+                self.engine = None
+                self.engine_enabled = False
+        else:
+            # disable
+            try:
+                if self.engine:
+                    try:
+                        self.engine.quit()
+                    except Exception:
+                        pass
+            finally:
+                self.engine = None
+                self.engine_enabled = False
+                self.engine_toggle.configure(text='Use Engine: Off')
+
+    def on_close(self):
+        try:
+            if self.engine:
+                try:
+                    self.engine.quit()
+                except Exception:
+                    pass
+        finally:
+            try:
+                self.master.destroy()
+            except Exception:
+                pass
 
     def save_pgn(self):
         # build PGN from current game

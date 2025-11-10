@@ -9,6 +9,7 @@ If no path is supplied the script will try ./engines/stockfish(.exe) and then PA
 import argparse
 import os
 import sys
+from typing import Optional
 import shutil
 import chess
 import chess.engine
@@ -46,7 +47,10 @@ def find_default_engine():
     return None
 
 
-def verify_engine(path: str, timeout: float) -> bool:
+def verify_engine(path: Optional[str], timeout: float) -> bool:
+    if not path:
+        print('ERROR: no engine path provided', file=sys.stderr)
+        return False
     try:
         engine = chess.engine.SimpleEngine.popen_uci(path)
     except Exception as e:
