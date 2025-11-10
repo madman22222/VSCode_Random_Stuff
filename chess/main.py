@@ -7,22 +7,35 @@ Dependencies: python-chess, Pillow (optional for PNG piece images)
 Controls:
 - Click a square to select a piece, then click destination to move.
 - After your move (white by default), the AI or engine will reply.
+
+Notes for the editor/linter:
+This file interacts with external packages (python-chess, Pillow). If the
+editor reports missing imports or unknown attributes, make sure the Python
+environment used by the editor has the dependencies installed. The repository
+also includes a `chess/requirements.txt` with the required packages.
+
+To reduce noisy diagnostics in editors that use Pyright/Pylance, some checks
+are disabled below when the analyzer is used.
 """
+
+# pyright: reportMissingImports=false, reportUnknownMemberType=false
 
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import chess
-import chess.pgn
-import chess.engine
+from typing import Optional
+import chess  # type: ignore
+import chess.pgn  # type: ignore
+import chess.engine  # type: ignore
 import threading
 import time
 import shutil
 import os
 try:
-    from PIL import Image, ImageTk
+    from PIL import Image, ImageTk  # type: ignore
 except Exception:
-    Image = None
-    ImageTk = None
+    from typing import Any
+    Image: Any = None
+    ImageTk: Any = None
 import urllib.request
 import json
 import zipfile
@@ -79,7 +92,7 @@ class SimpleAI:
                 break
         return max_score
 
-    def choose_move(self, board: chess.Board) -> chess.Move:
+    def choose_move(self, board: chess.Board) -> 'Optional[chess.Move]':
         best_move = None
         best_score = -9999999
         alpha = -9999999
@@ -139,6 +152,7 @@ class ChessGUI:
 
         tk.Button(btn_frame, text='Save PGN', command=self.save_pgn).grid(row=0, column=0, padx=2)
         tk.Button(btn_frame, text='Load PGN', command=self.load_pgn).grid(row=0, column=1, padx=2)
+        tk.Button(btn_frame, text='Undo', command=self.undo_move).grid(row=0, column=2, padx=2)
 
         # engine controls
         engine_frame = tk.LabelFrame(ctrl_frame, text='Engine')
@@ -146,9 +160,12 @@ class ChessGUI:
         self.engine_path_var = tk.StringVar()
         self.engine_path_var.set(shutil.which('stockfish') or '')
         tk.Entry(engine_frame, textvariable=self.engine_path_var, width=24).pack(padx=4, pady=2)
-        tk.Button(engine_frame, text='Detect', command=self.detect_engine).pack(pady=2)
-        tk.Button(engine_frame, text='Download', command=self.download_engine).pack(pady=2)
-        tk.Button(engine_frame, text='Verify', command=self.verify_engine).pack(pady=2)
+        self.detect_button = tk.Button(engine_frame, text='Detect', command=self.detect_engine)
+        self.detect_button.pack(pady=2)
+        self.download_button = tk.Button(engine_frame, text='Download', command=self.download_engine)
+        self.download_button.pack(pady=2)
+        self.verify_button = tk.Button(engine_frame, text='Verify', command=self.verify_engine)
+        self.verify_button.pack(pady=2)
         # GitHub token and platform selector for downloads
         gh_frame = tk.Frame(engine_frame)
         gh_frame.pack(pady=2)
@@ -173,6 +190,7 @@ class ChessGUI:
         self.depth_var = tk.IntVar(value=3)
         depth_scale = tk.Scale(ctrl_frame, from_=1, to=5, orient='horizontal', variable=self.depth_var, command=self.on_depth_change)
         depth_scale.pack()
+        self.depth_scale = depth_scale
 
         # try to load piece images (assets/)
         self.load_piece_images()
@@ -222,11 +240,35 @@ class ChessGUI:
                 return
             self.selected = square
             self.highlight(square)
+            # highlight legal moves from this square
+            self.show_legal_moves(square)
         else:
-            move = chess.Move(self.selected, square)
+            # handle promotions: if a pawn moves to the last rank, ask which piece
+            move = None
+            sel_piece = self.board.piece_at(self.selected)
+            promotes = False
+            if sel_piece is not None and sel_piece.piece_type == chess.PAWN:
+                r = chess.square_rank(square)
+                # white promotes on rank 7, black promotes on rank 0
+                if (sel_piece.color == chess.WHITE and r == 7) or (sel_piece.color == chess.BLACK and r == 0):
+                    promotes = True
+
+            if promotes:
+                assert sel_piece is not None
+                promo = self.ask_promotion(sel_piece.color)  # type: ignore[attr-defined]
+                if promo is None:
+                    # user cancelled promotion selection
+                    self.selected = None
+                    self.update_board()
+                    return
+                move = chess.Move(self.selected, square, promotion=promo)
+            else:
+                move = chess.Move(self.selected, square)
+
             if move in self.board.legal_moves:
                 self.board.push(move)
                 self.selected = None
+                self.clear_highlights()
                 self.update_board()
                 self.master.update()
                 # run AI/engine move in background thread so UI stays responsive
@@ -391,6 +433,116 @@ class ChessGUI:
                 self.master.destroy()
             except Exception:
                 pass
+
+    def ask_promotion(self, color: int) -> 'Optional[int]':
+        """Show a small dialog asking the player which piece to promote to.
+
+        Returns the chess piece type constant (chess.QUEEN, chess.ROOK, ...)
+        or None if the user cancels.
+        """
+        dlg = tk.Toplevel(self.master)
+        dlg.title('Choose promotion')
+        dlg.transient(self.master)
+        dlg.grab_set()
+
+        sel = {'choice': None}
+
+        def choose(ch):
+            sel['choice'] = ch
+            dlg.destroy()
+
+        frame = tk.Frame(dlg)
+        frame.pack(padx=8, pady=8)
+
+        # order: Queen, Rook, Bishop, Knight
+        # if piece images available, use them on the buttons
+        use_imgs = bool(self.piece_images)
+
+        # store promo images on self to keep references while dialog is open
+        self._promo_imgs = []
+
+        def make_button(pt, row, colpos):
+            if use_imgs:
+                # map piece type to symbol key
+                key = {chess.QUEEN: 'Q', chess.ROOK: 'R', chess.BISHOP: 'B', chess.KNIGHT: 'N'}[pt]
+                if color == chess.BLACK:
+                    key = key.lower()
+                img = self.piece_images.get(key) if self.piece_images else None
+                if img:
+                    b = tk.Button(frame, image=img, width=48, height=48, command=lambda: choose(pt))
+                    self._promo_imgs.append(img)
+                else:
+                    b = tk.Button(frame, text={chess.QUEEN: 'Queen', chess.ROOK: 'Rook', chess.BISHOP: 'Bishop', chess.KNIGHT: 'Knight'}[pt], width=8, command=lambda: choose(pt))
+            else:
+                b = tk.Button(frame, text={chess.QUEEN: 'Queen', chess.ROOK: 'Rook', chess.BISHOP: 'Bishop', chess.KNIGHT: 'Knight'}[pt], width=8, command=lambda: choose(pt))
+            b.grid(row=row, column=colpos, padx=4, pady=2)
+
+        make_button(chess.QUEEN, 0, 0)
+        make_button(chess.ROOK, 0, 1)
+        make_button(chess.BISHOP, 1, 0)
+        make_button(chess.KNIGHT, 1, 1)
+
+        # center dialog over parent
+        self.master.update_idletasks()
+        dlg.update_idletasks()
+        x = self.master.winfo_rootx() + (self.master.winfo_width() - dlg.winfo_width()) // 2
+        y = self.master.winfo_rooty() + (self.master.winfo_height() - dlg.winfo_height()) // 2
+        try:
+            dlg.geometry(f'+{x}+{y}')
+        except Exception:
+            pass
+
+        dlg.wait_window()
+        # clear references after dialog closed
+        try:
+            self._promo_imgs = []
+        except Exception:
+            pass
+        return sel['choice']
+
+    def show_legal_moves(self, square: int):
+        """Highlight legal destination squares for the selected square.
+
+        Capture squares are highlighted differently.
+        """
+        # clear previous highlights first
+        self.clear_highlights()
+        for mv in self.board.legal_moves:
+            if mv.from_square == square:
+                to_sq = mv.to_square
+                btn = self.buttons.get(to_sq)
+                if not btn:
+                    continue
+                # capture or quiet
+                if self.board.is_capture(mv):
+                    btn.configure(bg='#FF8888')
+                else:
+                    btn.configure(bg='#88FFDD')
+
+    def clear_highlights(self):
+        """Restore board square colors to normal (but keep selected highlight if any)."""
+        for sq, btn in self.buttons.items():
+            r = 7 - chess.square_rank(sq)
+            c = chess.square_file(sq)
+            color = LIGHT_COLOR if (r + c) % 2 == 0 else DARK_COLOR
+            btn.configure(bg=color)
+        if self.selected is not None:
+            # re-highlight selection
+            try:
+                self.buttons[self.selected].configure(bg='#AAFF88')
+            except Exception:
+                pass
+
+    def undo_move(self):
+        """Undo the last move if possible."""
+        try:
+            if len(self.board.move_stack) > 0:
+                self.board.pop()
+                self.clear_highlights()
+                self.selected = None
+                self.update_board()
+        except Exception:
+            pass
 
     def save_pgn(self):
         # build PGN from current game
