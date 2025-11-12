@@ -1,0 +1,24 @@
+{
+  "ai_depth": 3,
+  "engine_path": "",
+  "window_width": 900,
+  "window_height": 700,
+  "theme": "dark",
+  "sound_enabled": true,
+  "board_flipped": false,
+  "show_coordinates": true,
+  "last_move_highlight": true,
+  "animations_enabled": true,
+  "animation_speed": 10,
+  "show_eval_bar": true,
+  "clock_enabled": false,
+  "clock_time": 600,
+  "clock_increment": 0,
+  "statistics": {
+    "games_played": 0,
+    "white_wins": 0,
+    "black_wins": 0,
+    "draws": 0,
+    "total_moves": 0
+  }
+}

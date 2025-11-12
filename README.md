@@ -2,6 +2,8 @@
 
 This repository contains a small Python chess project located in the `chess/` folder.
 
+P.S. this project is don almost solely with AI so this is not a show of my skills but more of my thougght prosses and yes a lot has been done between editions. I have forgoten a few times to push till after somethings have been done.
+
 See `chess/README.md` for usage, installation instructions, and details about the GUI, AI, and engine integration.
 
 If you want to run the chess app, open a terminal in the `chess/` directory and follow the steps in that README.
