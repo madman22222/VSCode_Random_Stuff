@@ -20,5 +20,6 @@
     "black_wins": 0,
     "draws": 0,
     "total_moves": 0
-  }
+  },
+  "play_mode": "ai_vs_ai"
 }

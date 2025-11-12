@@ -1165,6 +1165,12 @@ class GameController:
         self.ai_thinking = False  # Track when AI is making a move
         self.move_history: list = []  # Store move history for last move highlighting
         self.play_mode = 'player_vs_player'  # New: 'player_vs_player' or 'player_vs_ai'
+        # Track AI session to safely abort background moves on new game/mode changes
+        self._ai_session_id = 0
+        # Auto-restart control for AI vs AI mode
+        self._auto_restart_scheduled = False
+        # Track autosave state to avoid duplicate saves per game
+        self._autosave_done = False
         
         # Initialize sound manager
         if HAS_UPGRADES and SoundManager:
@@ -1238,6 +1244,9 @@ class GameController:
         tk.Button(btn_frame, text='Save', command=self.save_pgn, font=('Arial', 8)).grid(row=0, column=0, padx=1)
         tk.Button(btn_frame, text='Load', command=self.load_pgn, font=('Arial', 8)).grid(row=0, column=1, padx=1)
         tk.Button(btn_frame, text='Undo', command=self.undo_move, font=('Arial', 8)).grid(row=0, column=2, padx=1)
+        # New Game button available in all modes
+        tk.Button(btn_frame, text='New', command=self.new_game, font=('Arial', 8)).grid(row=0, column=3, padx=1)
+        tk.Button(btn_frame, text='Restart', command=self.restart_game, font=('Arial', 8)).grid(row=0, column=4, padx=1)
 
         # AI depth - more compact
         tk.Label(scrollable_frame, text='AI Depth', font=('Arial', 9, 'bold')).pack()
@@ -1262,7 +1271,23 @@ class GameController:
         tk.Radiobutton(mode_frame, text='AI vs AI', variable=self.mode_var,
                        value='ai_vs_ai', command=self.change_mode,
                        font=('Arial', 8)).pack(anchor='w', padx=2)
-        
+        # Auto-restart option (effective in AI vs AI only)
+        self.auto_restart_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(mode_frame, text='Auto-restart on game end (AI vs AI)',
+                       variable=self.auto_restart_var, font=('Arial', 8)).pack(anchor='w', padx=10)
+        # AI move pacing to ensure UI keeps up (ms)
+        pace_frame = tk.Frame(mode_frame)
+        pace_frame.pack(fill='x', padx=8, pady=2)
+        tk.Label(pace_frame, text='AI Move Delay (ms):', font=('Arial', 8)).pack(side='left')
+        self.ai_delay_var = tk.IntVar(value=200)
+        tk.Scale(pace_frame, from_=0, to=1000, orient='horizontal', variable=self.ai_delay_var, length=120, sliderlength=14).pack(side='left', padx=4)
+
+        # General options
+        options_frame = tk.LabelFrame(scrollable_frame, text='Options', font=('Arial', 9, 'bold'))
+        options_frame.pack(fill='x', pady=2, padx=2)
+        self.autosave_pgn_var = tk.BooleanVar(value=self.config.get('auto_save_pgn', False) if self.config else False)
+        tk.Checkbutton(options_frame, text='Auto-save PGN on game end', variable=self.autosave_pgn_var, command=self.on_toggle_autosave, font=('Arial', 8)).pack(anchor='w', padx=2)
+
         # New features frame - more compact
         if HAS_UPGRADES:
             features_frame = tk.LabelFrame(scrollable_frame, text='Features', font=('Arial', 9, 'bold'))
@@ -1493,7 +1518,16 @@ class GameController:
                     self.update_board()
 
     def run_ai_move(self, depth: int):
-        time.sleep(0.2)
+        # Optional pacing so the UI can render between AI moves (especially in AI vs AI)
+        try:
+            if self.play_mode == 'ai_vs_ai':
+                delay_ms = int(self.ai_delay_var.get()) if hasattr(self, 'ai_delay_var') else 200
+                if delay_ms > 0:
+                    time.sleep(delay_ms / 1000.0)
+        except Exception:
+            pass
+        # Capture session ID to prevent stale threads from applying moves after a new game
+        session_id = self._ai_session_id
         move = None
         try:
             if self.engine_enabled and getattr(self.engine_manager, 'engine', None) is not None:
@@ -1527,13 +1561,15 @@ class GameController:
                 else:
                     self.ai_last_explanation = ''
             
-            if move is not None:
+            # Only apply the move if session hasn't changed (no new game/mode switch)
+            if move is not None and session_id == self._ai_session_id:
                 self.board.push(move)
         except Exception as e:
             print(f"Error in AI move: {e}")
         
-        # Schedule GUI update on main thread
-        self.master.after(0, self._finish_ai_move)
+        # Schedule GUI update on main thread only if still current session
+        if session_id == self._ai_session_id:
+            self.master.after(0, self._finish_ai_move)
     
     def _finish_ai_move(self):
         """Called on main thread after AI move completes."""
@@ -1633,11 +1669,70 @@ class GameController:
                         result = 'black' if self.board.turn == chess.WHITE else 'white'
                     self.ai.finalize_game(result)
                     self._learn_finalized = True
+                    # Auto-save PGN if enabled
+                    try:
+                        if bool(self.autosave_pgn_var.get() if hasattr(self, 'autosave_pgn_var') else False) and not getattr(self, '_autosave_done', False):
+                            self.autosave_pgn(result)
+                            self._autosave_done = True
+                    except Exception:
+                        pass
+                    # Auto-restart for AI vs AI if enabled
+                    try:
+                        if self.play_mode == 'ai_vs_ai' and bool(self.auto_restart_var.get() if hasattr(self, 'auto_restart_var') else False):
+                            if not self._auto_restart_scheduled:
+                                self._auto_restart_scheduled = True
+                                # Give a brief pause to let user see result
+                                self.master.after(1000, self._auto_restart_ai_game)
+                    except Exception:
+                        pass
             elif not game_over_now:
                 # Reset flag during ongoing games
                 self._learn_finalized = False
+                self._auto_restart_scheduled = False
         except Exception:
             pass
+
+    def new_game(self) -> None:
+        """Start a fresh game, clearing the board and state; if AI vs AI, auto-start."""
+        try:
+            # Increment session to abort any in-flight AI moves
+            self._ai_session_id += 1
+            self.ai_thinking = False
+            # Reset board/state
+            self.board = chess.Board()
+            self.selected = None
+            self.move_history = []
+            self.ai_last_explanation = ''
+            # Reset learning finalize flag
+            self._learn_finalized = False
+            # Reset autosave flag
+            self._autosave_done = False
+            self.update_board()
+            # If AI vs AI, kick off the new game automatically
+            if self.play_mode == 'ai_vs_ai':
+                current_depth = max(1, self.depth_var.get())
+                self.ai_thinking = True
+                self.status.config(text='AI is thinking...')
+                self.master.config(cursor='watch')
+                threading.Thread(target=self.run_ai_move, args=(current_depth,), daemon=True).start()
+        except Exception as e:
+            messagebox.showerror('New Game', f'Failed to start new game: {e}')
+
+    def restart_game(self) -> None:
+        """Restart the current game (alias of New Game), preserving mode and settings."""
+        self.new_game()
+
+    def _auto_restart_ai_game(self) -> None:
+        """Internal: auto-restart a new AI vs AI game after a conclusion."""
+        try:
+            # Ensure still in AI vs AI and auto-restart still requested
+            if self.play_mode != 'ai_vs_ai' or not (self.auto_restart_var.get() if hasattr(self, 'auto_restart_var') else False):
+                self._auto_restart_scheduled = False
+                return
+            self._auto_restart_scheduled = False
+            self.new_game()
+        except Exception:
+            self._auto_restart_scheduled = False
 
     def on_clock_timeout(self, is_white: bool) -> None:
         """Handle chess clock timeout."""
@@ -2158,6 +2253,48 @@ class GameController:
                 game.accept(exporter)
             messagebox.showinfo('Saved', f'Saved PGN to {file}')
 
+    def autosave_pgn(self, result: 'Optional[str]' = None) -> 'Optional[str]':
+        """Automatically save the current game's PGN to an autosaves/ folder.
+
+        Args:
+            result: Optional winner string ('white'/'black'/'draw') to include in filename.
+
+        Returns:
+            The path to the saved PGN file, or None on failure.
+        """
+        try:
+            autos_dir = os.path.join(os.path.dirname(__file__), 'autosaves')
+            os.makedirs(autos_dir, exist_ok=True)
+            # Build timestamped filename
+            ts = time.strftime('%Y%m%d_%H%M%S')
+            suffix = ''
+            if result:
+                suffix = f"_{result}"
+            out_path = os.path.join(autos_dir, f'game_{ts}{suffix}.pgn')
+
+            game = chess.pgn.Game()
+            node = game
+            b = chess.Board()
+            for mv in self.board.move_stack:
+                node = node.add_variation(mv)
+                b.push(mv)
+            with open(out_path, 'w', encoding='utf-8') as f:
+                exporter = chess.pgn.FileExporter(f)
+                game.accept(exporter)
+            return out_path
+        except Exception:
+            return None
+
+    def on_toggle_autosave(self) -> None:
+        """Persist the auto-save PGN setting to config when toggled."""
+        try:
+            if self.config:
+                var = getattr(self, 'autosave_pgn_var', None)
+                val = bool(var.get()) if var is not None else False
+                self.config.set('auto_save_pgn', val)
+        except Exception:
+            pass
+
     def load_pgn(self):
         file = filedialog.askopenfilename(filetypes=[('PGN files', '*.pgn')])
         if not file:
@@ -2179,14 +2316,18 @@ class GameController:
     def detect_engine(self):
         path = self.engine_manager.detect()
         if path:
-            self.engine_path_var.set(path)
+            var = getattr(self, 'engine_path_var', None)
+            if var is not None:
+                var.set(path)
             messagebox.showinfo('Detected', f'Found stockfish at {path}')
         else:
             messagebox.showinfo('Not found', 'Stockfish not found (engines/ or PATH). Please install and/or provide path.')
 
     def download_engine(self):
-        prefer = self.platform_var.get() if getattr(self, 'platform_var', None) else 'auto'
-        token = self.github_token.get().strip() if getattr(self, 'github_token', None) else ''
+        platform_var = getattr(self, 'platform_var', None)
+        prefer = platform_var.get() if platform_var is not None else 'auto'
+        gh_token = getattr(self, 'github_token', None)
+        token = gh_token.get().strip() if gh_token is not None else ''
         proceed = messagebox.askyesno('Download Stockfish', 'Download Stockfish release from GitHub releases?\nProceed?')
         if not proceed:
             return
@@ -2194,30 +2335,46 @@ class GameController:
         if not found:
             messagebox.showerror('Download failed', 'Failed to download or extract Stockfish — check network or token.')
             return
-        self.engine_path_var.set(found)
+        var = getattr(self, 'engine_path_var', None)
+        if var is not None:
+            var.set(found)
         messagebox.showinfo('Downloaded', f'Stockfish downloaded to {found}. You can now click Use Engine.')
 
     def verify_engine(self):
-        path = self.engine_path_var.get()
+        var = getattr(self, 'engine_path_var', None)
+        path = var.get() if var is not None else ''
         if not path:
             messagebox.showerror('Verify failed', 'No engine path provided')
             return
         if not os.path.exists(path) and shutil.which(path) is None:
             messagebox.showerror('Verify failed', 'Engine executable not found')
             return
-        retries = max(1, int(self.verify_retries.get())) if hasattr(self, 'verify_retries') else 2
-        timeout = float(self.verify_timeout.get()) if hasattr(self, 'verify_timeout') else 0.05
-        backoff = float(self.backoff_max.get()) if hasattr(self, 'backoff_max') else 5.0
-        strategy = getattr(self, 'backoff_var', None) and self.backoff_var.get() or 'linear'
-        auto_dl = bool(self.auto_download_var.get()) if hasattr(self, 'auto_download_var') else False
-        ok, msg, found_path = self.engine_manager.verify_engine(path, retries=retries, timeout=timeout, auto_download=auto_dl, prefer_platform=self.platform_var.get(), backoff=strategy, max_wait=backoff, token=self.github_token.get().strip())
+        vr = getattr(self, 'verify_retries', None)
+        vt = getattr(self, 'verify_timeout', None)
+        bm = getattr(self, 'backoff_max', None)
+        bv = getattr(self, 'backoff_var', None)
+        ad = getattr(self, 'auto_download_var', None)
+        retries = max(1, int(vr.get())) if vr is not None else 2
+        timeout = float(vt.get()) if vt is not None else 0.05
+        backoff = float(bm.get()) if bm is not None else 5.0
+        strategy = bv.get() if bv is not None else 'linear'
+        auto_dl = bool(ad.get()) if ad is not None else False
+        platform_var = getattr(self, 'platform_var', None)
+        prefer = platform_var.get() if platform_var is not None else 'auto'
+        gh_token = getattr(self, 'github_token', None)
+        token = gh_token.get().strip() if gh_token is not None else ''
+        ok, msg, found_path = self.engine_manager.verify_engine(path, retries=retries, timeout=timeout, auto_download=auto_dl, prefer_platform=prefer, backoff=strategy, max_wait=backoff, token=token)
         if ok:
             if found_path:
-                self.engine_path_var.set(found_path)
+                var = getattr(self, 'engine_path_var', None)
+                if var is not None:
+                    var.set(found_path)
             messagebox.showinfo('Verify OK', msg)
-            if hasattr(self, 'verify_log'):
-                self.verify_log.insert(tk.END, f'OK: {msg}')
+            vlog = getattr(self, 'verify_log', None)
+            if vlog is not None:
+                vlog.insert(tk.END, f'OK: {msg}')
         else:
-            if hasattr(self, 'verify_log'):
-                self.verify_log.insert(tk.END, f'ERR: {msg}')
+            vlog = getattr(self, 'verify_log', None)
+            if vlog is not None:
+                vlog.insert(tk.END, f'ERR: {msg}')
             messagebox.showerror('Verify failed', msg)

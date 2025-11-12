@@ -3,7 +3,7 @@
   "engine_path": "",
   "window_width": 900,
   "window_height": 700,
-  "theme": "light",
+  "theme": "dark",
   "sound_enabled": true,
   "board_flipped": false,
   "show_coordinates": true,
@@ -21,5 +21,6 @@
     "draws": 0,
     "total_moves": 11
   },
-  "play_mode": "player_vs_ai"
+  "play_mode": "ai_vs_ai",
+  "auto_save_pgn": true
 }
