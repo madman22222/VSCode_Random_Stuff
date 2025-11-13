@@ -37,6 +37,8 @@ Features
 - Piece images: the GUI supports PNG piece images placed in `assets/` (see `assets/README.md` for filenames). If images are not present, the GUI falls back to Unicode pieces.
 - Stockfish engine integration: you can toggle using an external UCI engine (Stockfish) from the UI. The app will try to auto-detect `stockfish` in your PATH; otherwise provide the path in the Engine box and click Detect/Use Engine.
 - **Polyglot opening book support**: Load standard Polyglot .bin opening books for stronger opening play. The AI will consult the book before searching. Use the "Load Book" button in the "Opening Book (Polyglot)" panel to select a .bin file.
+- **Perft testing**: Validate move generation correctness using standard perft test positions. Run `python perft.py --test` to verify the chess implementation.
+- **Position analysis**: Analyze positions using FEN/EPD format with detailed metrics (material, mobility, phase detection). Run `python fen_analyzer.py` for examples.
 
 Downloader and verification
 
