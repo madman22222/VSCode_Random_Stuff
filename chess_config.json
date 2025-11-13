@@ -19,8 +19,12 @@
     "white_wins": 0,
     "black_wins": 0,
     "draws": 0,
-    "total_moves": 11
+    "total_moves": 15
   },
-  "play_mode": "ai_vs_ai",
-  "auto_save_pgn": true
+  "play_mode": "training_ai",
+  "auto_save_pgn": true,
+  "training_batch_size": 1000,
+  "training_move_time_ms": 250,
+  "training_snapshot_batches": 0,
+  "training_games": 0
 }

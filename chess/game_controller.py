@@ -57,6 +57,55 @@ except ImportError:
     ChessClock = None  # type: ignore
 
 
+class Tooltip:
+    """Simple tooltip for Tk widgets."""
+    def __init__(self, widget: tk.Widget, text: str, delay_ms: int = 400):
+        self.widget = widget
+        self.text = text
+        self.delay_ms = delay_ms
+        self._after_id: 'Optional[str]' = None
+        self._tip: 'Optional[tk.Toplevel]' = None
+        try:
+            widget.bind('<Enter>', self._on_enter)
+            widget.bind('<Leave>', self._on_leave)
+        except Exception:
+            pass
+
+    def _on_enter(self, _evt=None):
+        try:
+            self._after_id = self.widget.after(self.delay_ms, self._show)
+        except Exception:
+            pass
+
+    def _on_leave(self, _evt=None):
+        try:
+            if self._after_id:
+                self.widget.after_cancel(self._after_id)
+                self._after_id = None
+            if self._tip:
+                self._tip.destroy()
+                self._tip = None
+        except Exception:
+            pass
+
+    def _show(self):
+        try:
+            if self._tip is not None:
+                return
+            x = self.widget.winfo_rootx() + 20
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 8
+            tip = tk.Toplevel(self.widget)
+            tip.wm_overrideredirect(True)
+            tip.geometry(f"+{x}+{y}")
+            lbl = tk.Label(tip, text=self.text, justify='left',
+                           background='#FFFFE0', relief='solid', borderwidth=1,
+                           font=('Arial', 9))
+            lbl.pack(ipadx=6, ipady=3)
+            self._tip = tip
+        except Exception:
+            pass
+
+
 class SimpleAI:
     """
     Advanced Chess AI with Learning Capability
@@ -238,10 +287,21 @@ class SimpleAI:
         
         # Path to persistent learning file
         self._learning_path = os.path.join(os.path.dirname(__file__), 'ai_learn.json')
+        self._learning_path_gz = self._learning_path + '.gz'
         self._load_learning_db()
         
         # Toggle for learning bias in move ordering
         self.use_learning = True
+
+        # Training persistence and storage controls
+        # When defer_persistence is True, finalize_game will batch disk writes
+        self.defer_persistence: bool = False
+        self.persist_every_n: int = 100
+        self._pending_games: int = 0
+        # Skip readable export during training batches by default
+        self.export_readable_during_training: bool = False
+        # Compress learning file to save disk space (writes ai_learn.json.gz)
+        self.compress_learning: bool = True
 
     # ==================== Learning System ====================
     # These methods handle persistent learning across games
@@ -249,12 +309,18 @@ class SimpleAI:
     def _load_learning_db(self) -> None:
         """Load the learning database from disk (if it exists)."""
         try:
-            if os.path.exists(self._learning_path):
-                import json
+            import json, gzip
+            data = None
+            # Prefer compressed file if available
+            if os.path.exists(self._learning_path_gz):
+                with gzip.open(self._learning_path_gz, 'rt', encoding='utf-8') as f:
+                    data = json.load(f)
+            elif os.path.exists(self._learning_path):
                 with open(self._learning_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     if isinstance(data, dict):
                         self.learning_db = data
+            # If we loaded from uncompressed file but compression is enabled, migrate on next save
         except Exception:
             # If file corrupt or missing, start with empty database
             self.learning_db = {}
@@ -262,9 +328,20 @@ class SimpleAI:
     def _save_learning_db(self) -> None:
         """Persist the learning database to disk."""
         try:
-            import json
-            with open(self._learning_path, 'w', encoding='utf-8') as f:
-                json.dump(self.learning_db, f, indent=2)
+            import json, gzip
+            if getattr(self, 'compress_learning', False):
+                # Write compressed
+                with gzip.open(self._learning_path_gz, 'wt', encoding='utf-8') as f:
+                    json.dump(self.learning_db, f, separators=(',', ':'), ensure_ascii=False)
+                # Try to remove uncompressed file to save space
+                try:
+                    if os.path.exists(self._learning_path):
+                        os.remove(self._learning_path)
+                except Exception:
+                    pass
+            else:
+                with open(self._learning_path, 'w', encoding='utf-8') as f:
+                    json.dump(self.learning_db, f, separators=(',', ':'), ensure_ascii=False)
         except Exception:
             pass  # Silently fail to avoid disrupting gameplay
 
@@ -316,14 +393,27 @@ class SimpleAI:
             # Clear the game log for next game
             self.game_log = []
             
-            # Persist to disk
-            self._save_learning_db()
-            
-            # Auto-regenerate the human-readable export so users can inspect changes
-            try:
-                self.export_readable_learning()
-            except Exception:
-                pass
+            # Persist to disk (batched if training mode defers persistence)
+            if getattr(self, 'defer_persistence', False):
+                # Batch persistence for speed during training
+                self._pending_games = int(getattr(self, '_pending_games', 0)) + 1
+                threshold = int(getattr(self, 'persist_every_n', 100))
+                if self._pending_games >= max(1, threshold):
+                    self._save_learning_db()
+                    # Optionally export readable file during training batches
+                    if bool(getattr(self, 'export_readable_during_training', False)):
+                        try:
+                            self.export_readable_learning()
+                        except Exception:
+                            pass
+                    self._pending_games = 0
+            else:
+                # Default behavior: save and export after every game
+                self._save_learning_db()
+                try:
+                    self.export_readable_learning()
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -391,7 +481,8 @@ class SimpleAI:
             
             out_path = path or os.path.join(os.path.dirname(self._learning_path), 'ai_learn_readable.json')
             with open(out_path, 'w', encoding='utf-8') as f:
-                json.dump(blob, f, indent=2)
+                # Minified to reduce size; still viewable
+                json.dump(blob, f, separators=(',', ':'), ensure_ascii=False)
             return out_path
         except Exception:
             return None
@@ -1134,6 +1225,202 @@ class SimpleAI:
         return score
 
 
+class TrainingAI:
+    """
+    Headless high-speed AI vs AI training mode.
+    Runs games in background without UI updates for faster learning.
+    """
+    
+    def __init__(self, ai_instance: SimpleAI, depth: int = 3, batch_size: int = 100, export_interval: int | None = None, move_time_limit: float = 0.25):
+        """
+        Initialize training AI.
+        
+        Args:
+            ai_instance: The SimpleAI instance to train
+            depth: Search depth for both AIs
+        """
+        self.ai = ai_instance
+        self.depth = depth
+        self.running = False
+        self.games_played = 0
+        self.results = {'white': 0, 'black': 0, 'draw': 0}
+        self.thread = None
+        # Batching controls
+        self.batch_size = max(1, int(batch_size))
+        # If provided, export human-readable every N batches; None disables during training
+        self.export_interval = export_interval
+        self._batches_done = 0
+        self.move_time_limit = max(0.05, float(move_time_limit))
+        # Live metrics for UI polling
+        self.current_move_count = 0
+        # Console move counter throttle
+        self._last_move_print = 0.0
+    
+    def start(self):
+        """Start training in background thread."""
+        if self.running:
+            return
+        
+        self.running = True
+        # Configure AI for batched persistence
+        try:
+            self.ai.defer_persistence = True
+            self.ai.persist_every_n = self.batch_size
+            # Only export readable during training if export_interval is set
+            self.ai.export_readable_during_training = False if self.export_interval is None else True
+            # Reset pending counter
+            self.ai._pending_games = 0
+        except Exception:
+            pass
+        self.thread = threading.Thread(target=self._training_loop, daemon=True)
+        self.thread.start()
+        print(f"\n{'='*60}")
+        print(f"🎓 TRAINING AI MODE STARTED")
+        print(f"{'='*60}")
+        print(f"AI Depth: {self.depth}")
+        print(f"Learning enabled: {self.ai.use_learning}")
+        print(f"{'='*60}\n")
+        # Reset live metrics at start
+        try:
+            self.current_move_count = 0
+            self._last_move_print = 0.0
+        except Exception:
+            pass
+    
+    def stop(self):
+        """Stop training."""
+        if not self.running:
+            return
+        
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=2.0)
+        
+        # Flush any pending learning to disk and export readable once
+        try:
+            self.ai._save_learning_db()
+            try:
+                self.ai.export_readable_learning()
+            except Exception:
+                pass
+            # Restore default persistence behavior
+            self.ai.defer_persistence = False
+            self.ai.export_readable_during_training = False
+        except Exception:
+            pass
+
+        print(f"\n{'='*60}")
+        print(f"🛑 TRAINING AI MODE STOPPED")
+        print(f"{'='*60}")
+        print(f"Total games played: {self.games_played}")
+        print(f"Results: White wins: {self.results['white']}, "
+              f"Black wins: {self.results['black']}, "
+              f"Draws: {self.results['draw']}")
+        if self.games_played > 0:
+            white_pct = (self.results['white'] / self.games_played) * 100
+            black_pct = (self.results['black'] / self.games_played) * 100
+            draw_pct = (self.results['draw'] / self.games_played) * 100
+            print(f"Win rates: White: {white_pct:.1f}%, Black: {black_pct:.1f}%, Draw: {draw_pct:.1f}%")
+        print(f"{'='*60}\n")
+        try:
+            self.current_move_count = 0
+        except Exception:
+            pass
+    
+    def _training_loop(self):
+        """Main training loop - runs games continuously."""
+        while self.running:
+            try:
+                print(f"🚀 Starting game #{self.games_played + 1}...")
+                board = chess.Board()
+                self.ai.game_log = []  # Reset game log
+                
+                # Play one complete game
+                move_count = 0
+                self.current_move_count = 0
+                max_moves = 300  # Prevent infinite games
+                
+                while not board.is_game_over() and move_count < max_moves and self.running:
+                    # Use time-limited search to guarantee steady progress
+                    move = self.ai.choose_move_iterative(board, time_limit=self.move_time_limit)
+                    
+                    if move is None:
+                        # Fallback: pick a random legal move to keep progress
+                        legal = list(board.legal_moves)
+                        if not legal:
+                            break
+                        move = random.choice(legal)
+                    
+                    board.push(move)
+                    move_count += 1
+                    # Update live move counter for UI
+                    self.current_move_count = move_count
+                    # Throttled move counter output to console
+                    try:
+                        now = time.time()
+                        if (move_count % 10 == 0) or (now - self._last_move_print >= 1.0):
+                            print(f"   Moves so far: {move_count}")
+                            self._last_move_print = now
+                    except Exception:
+                        pass
+                
+                # Game ended
+                if not self.running:
+                    break
+                
+                self.games_played += 1
+                
+                # Determine result
+                if board.is_checkmate():
+                    winner = 'black' if board.turn == chess.WHITE else 'white'
+                    result_text = f"{'White' if winner == 'white' else 'Black'} wins by checkmate"
+                elif board.is_stalemate():
+                    winner = 'draw'
+                    result_text = "Draw by stalemate"
+                elif board.is_insufficient_material():
+                    winner = 'draw'
+                    result_text = "Draw by insufficient material"
+                elif move_count >= max_moves:
+                    winner = 'draw'
+                    result_text = "Draw by move limit"
+                else:
+                    winner = 'draw'
+                    result_text = "Draw"
+                
+                # Update results
+                self.results[winner] += 1
+                
+                # Finalize learning
+                self.ai.finalize_game(winner)
+                
+                # Print game summary
+                print(f"🎮 Game #{self.games_played} completed: {result_text} ({move_count} moves)")
+
+                # Handle export interval if configured: export every N batches
+                if self.export_interval is not None and self.ai._pending_games == 0:
+                    # A batch was just flushed; increment batch counter
+                    self._batches_done += 1
+                    if (self._batches_done % max(1, self.export_interval)) == 0:
+                        try:
+                            self.ai.export_readable_learning()
+                            print("📤 Exported readable learning snapshot.")
+                        except Exception:
+                            pass
+                
+                # Print periodic statistics
+                if self.games_played % 10 == 0:
+                    print(f"\n{'─'*60}")
+                    print(f"📊 Training Statistics (after {self.games_played} games):")
+                    print(f"   White: {self.results['white']} wins ({(self.results['white']/self.games_played)*100:.1f}%)")
+                    print(f"   Black: {self.results['black']} wins ({(self.results['black']/self.games_played)*100:.1f}%)")
+                    print(f"   Draws: {self.results['draw']} ({(self.results['draw']/self.games_played)*100:.1f}%)")
+                    print(f"{'─'*60}\n")
+                
+            except Exception as e:
+                print(f"Error in training loop: {e}")
+                time.sleep(0.1)
+
+
 class GameController:
     """Coordinates the GUI view, AI, and engine manager.
 
@@ -1171,6 +1458,13 @@ class GameController:
         self._auto_restart_scheduled = False
         # Track autosave state to avoid duplicate saves per game
         self._autosave_done = False
+        # Game started flag - prevents AI from moving until Start is pressed
+        self.game_started = False
+        # UI update throttling for smoother high-speed AI
+        self._last_ui_update = 0
+        self._ui_update_interval = 0.05  # Minimum 50ms between UI updates
+        # Training AI instance for headless mode
+        self.training_ai = None
         
         # Initialize sound manager
         if HAS_UPGRADES and SoundManager:
@@ -1229,10 +1523,45 @@ class GameController:
         ctrl_canvas.create_window((0, 0), window=scrollable_frame, anchor='nw')
         self.scrollable_frame = scrollable_frame
         
-        # Update scroll region when frame changes size
+        # Small helper to add an info icon with a tooltip
+        def _info(parent: tk.Widget, text: str) -> tk.Label:
+            lbl = tk.Label(parent, text='ℹ', font=('Arial', 8, 'bold'), fg='#3f51b5', cursor='question_arrow')
+            try:
+                Tooltip(lbl, text)
+            except Exception:
+                pass
+            return lbl
+
+        # Update scroll region when frame changes size (throttled)
         def on_frame_configure(event):
-            ctrl_canvas.configure(scrollregion=ctrl_canvas.bbox('all'))
+            try:
+                ctrl_canvas.update_idletasks()
+                ctrl_canvas.configure(scrollregion=ctrl_canvas.bbox('all'))
+            except Exception:
+                pass
         scrollable_frame.bind('<Configure>', on_frame_configure)
+
+        # Improve scrolling responsiveness: bind to canvas and inner frame only
+        ctrl_canvas.configure(yscrollincrement=20)
+        def on_mousewheel(event):
+            try:
+                if getattr(event, 'delta', 0) != 0:
+                    ctrl_canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+                elif getattr(event, 'num', None) == 4:
+                    ctrl_canvas.yview_scroll(-1, 'units')
+                elif getattr(event, 'num', None) == 5:
+                    ctrl_canvas.yview_scroll(1, 'units')
+            except Exception:
+                pass
+        # Ensure canvas gets focus under pointer for wheel events
+        ctrl_canvas.bind('<Enter>', lambda e: ctrl_canvas.focus_set())
+        ctrl_canvas.bind('<MouseWheel>', on_mousewheel)
+        scrollable_frame.bind('<MouseWheel>', on_mousewheel)
+        # Linux support
+        ctrl_canvas.bind('<Button-4>', on_mousewheel)
+        ctrl_canvas.bind('<Button-5>', on_mousewheel)
+        scrollable_frame.bind('<Button-4>', on_mousewheel)
+        scrollable_frame.bind('<Button-5>', on_mousewheel)
         
         # Move list - more compact
         tk.Label(scrollable_frame, text='Moves', font=('Arial', 9, 'bold')).pack()
@@ -1247,9 +1576,22 @@ class GameController:
         # New Game button available in all modes
         tk.Button(btn_frame, text='New', command=self.new_game, font=('Arial', 8)).grid(row=0, column=3, padx=1)
         tk.Button(btn_frame, text='Restart', command=self.restart_game, font=('Arial', 8)).grid(row=0, column=4, padx=1)
+        
+        # Start/Pause button for game control
+        start_pause_frame = tk.Frame(scrollable_frame)
+        start_pause_frame.pack(pady=4)
+        self.start_pause_button = tk.Button(start_pause_frame, text='▶ Start Game', 
+                                           command=self.toggle_game_started, 
+                                           font=('Arial', 10, 'bold'),
+                                           bg='#4CAF50', fg='white',
+                                           width=15)
+        self.start_pause_button.pack()
 
-        # AI depth - more compact
-        tk.Label(scrollable_frame, text='AI Depth', font=('Arial', 9, 'bold')).pack()
+        # AI depth - header with info
+        depth_header = tk.Frame(scrollable_frame)
+        depth_header.pack(fill='x')
+        tk.Label(depth_header, text='AI Depth', font=('Arial', 9, 'bold')).pack(side='left')
+        _info(depth_header, 'Search depth for AI in GUI modes. Higher = stronger, slower.\nFor Training AI, use Per-move time to control speed.').pack(side='left', padx=4)
         self.depth_var = tk.IntVar(value=ai_depth)
         depth_scale = tk.Scale(scrollable_frame, from_=1, to=6, orient='horizontal', 
                               variable=self.depth_var, command=self.on_depth_change,
@@ -1260,6 +1602,10 @@ class GameController:
         # Game mode selector
         mode_frame = tk.LabelFrame(scrollable_frame, text='Game Mode', font=('Arial', 9, 'bold'))
         mode_frame.pack(fill='x', pady=2, padx=2)
+        # Info row at the top of Game Mode
+        mode_info_row = tk.Frame(mode_frame)
+        mode_info_row.pack(fill='x', padx=2, pady=1)
+        _info(mode_info_row, 'Player vs Player: both sides human.\nPlayer vs AI: Black is AI by default.\nAI vs AI: visible self-play with UI pacing.\nTraining AI: fastest headless self-play, logs to console.').pack(side='left')
 
         self.mode_var = tk.StringVar(value='player_vs_player')
         tk.Radiobutton(mode_frame, text='Player vs Player', variable=self.mode_var,
@@ -1271,6 +1617,9 @@ class GameController:
         tk.Radiobutton(mode_frame, text='AI vs AI', variable=self.mode_var,
                        value='ai_vs_ai', command=self.change_mode,
                        font=('Arial', 8)).pack(anchor='w', padx=2)
+        tk.Radiobutton(mode_frame, text='Training AI (No UI)', variable=self.mode_var,
+                       value='training_ai', command=self.change_mode,
+                       font=('Arial', 8)).pack(anchor='w', padx=2)
         # Auto-restart option (effective in AI vs AI only)
         self.auto_restart_var = tk.BooleanVar(value=True)
         tk.Checkbutton(mode_frame, text='Auto-restart on game end (AI vs AI)',
@@ -1279,6 +1628,7 @@ class GameController:
         pace_frame = tk.Frame(mode_frame)
         pace_frame.pack(fill='x', padx=8, pady=2)
         tk.Label(pace_frame, text='AI Move Delay (ms):', font=('Arial', 8)).pack(side='left')
+        _info(pace_frame, 'Applies only to AI vs AI (UI) to slow moves for visibility. Training AI uses Per-move time instead.').pack(side='left', padx=4)
         self.ai_delay_var = tk.IntVar(value=200)
         tk.Scale(pace_frame, from_=0, to=1000, orient='horizontal', variable=self.ai_delay_var, length=120, sliderlength=14).pack(side='left', padx=4)
 
@@ -1286,7 +1636,78 @@ class GameController:
         options_frame = tk.LabelFrame(scrollable_frame, text='Options', font=('Arial', 9, 'bold'))
         options_frame.pack(fill='x', pady=2, padx=2)
         self.autosave_pgn_var = tk.BooleanVar(value=self.config.get('auto_save_pgn', False) if self.config else False)
-        tk.Checkbutton(options_frame, text='Auto-save PGN on game end', variable=self.autosave_pgn_var, command=self.on_toggle_autosave, font=('Arial', 8)).pack(anchor='w', padx=2)
+        # Row for autosave option + info icon
+        opts_row1 = tk.Frame(options_frame)
+        opts_row1.pack(fill='x', padx=2, pady=1)
+        autosave_cb = tk.Checkbutton(opts_row1, text='Auto-save PGN on game end', variable=self.autosave_pgn_var, command=self.on_toggle_autosave, font=('Arial', 8))
+        autosave_cb.pack(side='left')
+        _info(opts_row1, 'When enabled, saves PGN automatically at game end.').pack(side='left', padx=4)
+        # Compress learning data (gzip)
+        self.compress_learning_var = tk.BooleanVar(value=(self.config.get('compress_learning', getattr(self.ai, 'compress_learning', True)) if self.config else getattr(self.ai, 'compress_learning', True)))
+        opts_row2 = tk.Frame(options_frame)
+        opts_row2.pack(fill='x', padx=2, pady=1)
+        compress_cb = tk.Checkbutton(opts_row2, text='Compress learning data (gzip)', variable=self.compress_learning_var,
+                                     command=self.on_toggle_compress, font=('Arial', 8))
+        compress_cb.pack(side='left')
+        _info(opts_row2, 'Store learning as ai_learn.json.gz (smaller, faster I/O).').pack(side='left', padx=4)
+        # Apply initial compression setting to AI
+        try:
+            self.ai.compress_learning = bool(self.compress_learning_var.get())
+        except Exception:
+            pass
+
+        # Training settings
+        training_frame = tk.LabelFrame(scrollable_frame, text='Training Settings', font=('Arial', 9, 'bold'))
+        training_frame.pack(fill='x', pady=2, padx=2)
+        self.training_batch_size_var = tk.IntVar(value=(self.config.get('training_batch_size', 100) if self.config else 100))
+        self.training_move_time_var = tk.IntVar(value=(self.config.get('training_move_time_ms', 250) if self.config else 250))  # milliseconds per move
+        self.training_snapshot_interval_var = tk.IntVar(value=(self.config.get('training_snapshot_batches', 0) if self.config else 0))  # 0 = off
+        self.training_games_var = tk.IntVar(value=(self.config.get('training_games', 0) if self.config else 0))
+        row = tk.Frame(training_frame)
+        row.pack(fill='x', padx=4, pady=1)
+        tk.Label(row, text='Batch size (games):', font=('Arial', 8)).pack(side='left')
+        batch_entry = tk.Entry(row, textvariable=self.training_batch_size_var, width=6, font=('Arial', 8))
+        batch_entry.pack(side='left', padx=6)
+        _info(row, 'Save learning after this many games. Larger = fewer writes, faster training.').pack(side='left', padx=4)
+        row2 = tk.Frame(training_frame)
+        row2.pack(fill='x', padx=4, pady=1)
+        tk.Label(row2, text='Per-move time (ms):', font=('Arial', 8)).pack(side='left')
+        move_scale = tk.Scale(row2, from_=50, to=1000, orient='horizontal', variable=self.training_move_time_var, length=120, sliderlength=14)
+        move_scale.pack(side='left', padx=6)
+        _info(row2, 'Time budget per move during training. Guarantees progress at high depths.').pack(side='left', padx=4)
+        row3 = tk.Frame(training_frame)
+        row3.pack(fill='x', padx=4, pady=1)
+        tk.Label(row3, text='Readable snapshot every N batches (0=off):', font=('Arial', 8)).pack(side='left')
+        snap_entry = tk.Entry(row3, textvariable=self.training_snapshot_interval_var, width=6, font=('Arial', 8))
+        snap_entry.pack(side='left', padx=6)
+        _info(row3, 'Export readable learning after N batches. 0 disables periodic snapshots.').pack(side='left', padx=4)
+        row4 = tk.Frame(training_frame)
+        row4.pack(fill='x', padx=4, pady=1)
+        tk.Label(row4, text='Games to run (0=until stop):', font=('Arial', 8)).pack(side='left')
+        games_entry = tk.Entry(row4, textvariable=self.training_games_var, width=8, font=('Arial', 8))
+        games_entry.pack(side='left', padx=6)
+        _info(row4, 'End training automatically after this many games. 0 keeps training until you stop it.').pack(side='left', padx=4)
+        # Reset to defaults button
+        reset_btn = tk.Button(training_frame, text='Reset Training Defaults', font=('Arial', 8), command=self.reset_training_defaults)
+        reset_btn.pack(anchor='e', padx=4, pady=4)
+        # Quick actions: Copy command / Run training
+        actions_row = tk.Frame(training_frame)
+        actions_row.pack(fill='x', padx=4, pady=4)
+        tk.Button(actions_row, text='Copy Training Command', font=('Arial', 8), command=self.copy_training_command).pack(side='left')
+        tk.Button(actions_row, text='Run Training in Console', font=('Arial', 8), command=self.run_training_now).pack(side='left', padx=6)
+        _info(actions_row, 'Copy: puts a ready-to-run CLI command on clipboard. Run: opens a new console window executing training.').pack(side='left', padx=6)
+        # Tooltip for reset action
+        try:
+            Tooltip(reset_btn, 'Restore batch=100, per-move=250ms, snapshots off, compression on.')
+        except Exception:
+            pass
+
+        # Live training progress label
+        stats_row = tk.Frame(training_frame)
+        stats_row.pack(fill='x', padx=4, pady=2)
+        tk.Label(stats_row, text='Training Progress:', font=('Arial', 8, 'bold')).pack(side='left')
+        self.training_stats_label = tk.Label(stats_row, text='—', font=('Arial', 8))
+        self.training_stats_label.pack(side='left', padx=6)
 
         # New features frame - more compact
         if HAS_UPGRADES:
@@ -1431,6 +1852,12 @@ class GameController:
         # In AI vs AI mode, ignore manual input
         if self.play_mode == 'ai_vs_ai':
             return
+        # In training AI mode, ignore manual input
+        if self.play_mode == 'training_ai':
+            return
+        # In player vs AI mode, only allow moves if game has started
+        if self.play_mode == 'player_vs_ai' and not self.game_started:
+            return
         if self.board.is_game_over():
             return
         piece = self.board.piece_at(square)
@@ -1504,8 +1931,8 @@ class GameController:
                         self.config.update_statistics('draw')
                 
                 if not self.board.is_game_over():
-                    # Only trigger AI if in player vs AI mode
-                    if self.play_mode == 'player_vs_ai':
+                    # Only trigger AI if in player vs AI mode AND game has started
+                    if self.play_mode == 'player_vs_ai' and self.game_started:
                         self.ai_thinking = True  # Lock UI while AI thinks
                         self.status.config(text='AI is thinking...')
                         self.master.config(cursor='watch')  # Change cursor to show waiting
@@ -1526,6 +1953,15 @@ class GameController:
                     time.sleep(delay_ms / 1000.0)
         except Exception:
             pass
+        
+        # For AI vs AI, wait until previous move is fully processed
+        if self.play_mode == 'ai_vs_ai':
+            # Wait for ai_thinking to be False (previous move completed)
+            max_wait = 50  # Maximum 5 seconds
+            wait_count = 0
+            while self.ai_thinking and wait_count < max_wait:
+                time.sleep(0.1)
+                wait_count += 1
         # Capture session ID to prevent stale threads from applying moves after a new game
         session_id = self._ai_session_id
         move = None
@@ -1543,7 +1979,16 @@ class GameController:
                 self.ai.depth = depth
                 # Compute explanation using learning before pushing
                 fen_key = self.board.fen().split(' ')[0]
-                move = self.ai.choose_move(self.board)
+                # Use time-limited search in AI vs AI to avoid long stalls at higher depths
+                if self.play_mode == 'ai_vs_ai':
+                    try:
+                        tl = (self.training_move_time_var.get() / 1000.0) if hasattr(self, 'training_move_time_var') else 0.25
+                        tl = max(0.05, float(tl))
+                    except Exception:
+                        tl = 0.25
+                    move = self.ai.choose_move_iterative(self.board, time_limit=tl)
+                else:
+                    move = self.ai.choose_move(self.board)
                 if move is not None and getattr(self.ai, 'use_learning', False):
                     try:
                         key = f"{fen_key}|{move.uci()}"
@@ -1577,8 +2022,8 @@ class GameController:
             self.ai_thinking = False  # Unlock UI after AI move
             self.master.config(cursor='')  # Reset cursor to default
             self.update_board()
-            # Chain next AI move if in AI vs AI mode
-            if self.play_mode == 'ai_vs_ai' and not self.board.is_game_over():
+            # Chain next AI move if in AI vs AI mode AND game has started
+            if self.play_mode == 'ai_vs_ai' and not self.board.is_game_over() and self.game_started:
                 # Brief delay to keep UI responsive
                 current_depth = max(1, self.depth_var.get())
                 self.ai_thinking = True
@@ -1590,7 +2035,14 @@ class GameController:
             self.ai_thinking = False
             self.master.config(cursor='')
 
-    def update_board(self):
+    def update_board(self, force=False):
+        # Throttle UI updates for smoother high-speed AI performance
+        if not force:
+            current_time = time.time()
+            if current_time - self._last_ui_update < self._ui_update_interval:
+                return
+            self._last_ui_update = current_time
+        
         # render pieces and move list
         try:
             self.board_view.update(self.board, self.piece_images)
@@ -1693,7 +2145,7 @@ class GameController:
             pass
 
     def new_game(self) -> None:
-        """Start a fresh game, clearing the board and state; if AI vs AI, auto-start."""
+        """Start a fresh game, clearing the board and state."""
         try:
             # Increment session to abort any in-flight AI moves
             self._ai_session_id += 1
@@ -1707,14 +2159,10 @@ class GameController:
             self._learn_finalized = False
             # Reset autosave flag
             self._autosave_done = False
-            self.update_board()
-            # If AI vs AI, kick off the new game automatically
-            if self.play_mode == 'ai_vs_ai':
-                current_depth = max(1, self.depth_var.get())
-                self.ai_thinking = True
-                self.status.config(text='AI is thinking...')
-                self.master.config(cursor='watch')
-                threading.Thread(target=self.run_ai_move, args=(current_depth,), daemon=True).start()
+            # Stop the game - require Start button press
+            self.game_started = False
+            self._update_start_pause_button()
+            self.update_board(force=True)
         except Exception as e:
             messagebox.showerror('New Game', f'Failed to start new game: {e}')
 
@@ -1731,6 +2179,15 @@ class GameController:
                 return
             self._auto_restart_scheduled = False
             self.new_game()
+            # Auto-start the game for AI vs AI
+            self.game_started = True
+            self._update_start_pause_button()
+            if not self.board.is_game_over():
+                current_depth = max(1, self.depth_var.get())
+                self.ai_thinking = True
+                self.status.config(text='AI is thinking...')
+                self.master.config(cursor='watch')
+                threading.Thread(target=self.run_ai_move, args=(current_depth,), daemon=True).start()
         except Exception:
             self._auto_restart_scheduled = False
 
@@ -1816,19 +2273,142 @@ class GameController:
             mode_text = "AI vs AI"
         elif self.play_mode == 'player_vs_ai':
             mode_text = "Player vs AI"
+        elif self.play_mode == 'training_ai':
+            mode_text = "Training AI (No UI)"
         else:
             mode_text = "Player vs Player"
         print(f"Game mode changed to: {mode_text}")
-        # If switching to AI vs AI and not over, start AI loop if idle
-        if self.play_mode == 'ai_vs_ai' and not self.board.is_game_over() and not self.ai_thinking:
-            try:
+        # Stop the game when mode changes - require Start button press
+        self.game_started = False
+        self._update_start_pause_button()
+        
+        # Stop training AI if switching away from training mode
+        if self.play_mode != 'training_ai' and self.training_ai and self.training_ai.running:
+            self.stop_training_ai()
+        
+        # If entering training mode, start training AI
+        if self.play_mode == 'training_ai':
+            self.start_training_ai()
+    
+    def toggle_game_started(self) -> None:
+        """Toggle game started state (Start/Pause button)."""
+        self.game_started = not self.game_started
+        self._update_start_pause_button()
+        
+        # If starting the game and it's AI's turn (or AI vs AI), trigger AI move
+        if self.game_started and not self.board.is_game_over():
+            if self.play_mode == 'ai_vs_ai':
+                # Start AI vs AI game
+                current_depth = max(1, self.depth_var.get())
                 self.ai_thinking = True
                 self.status.config(text='AI is thinking...')
                 self.master.config(cursor='watch')
-                current_depth = max(1, self.depth_var.get())
                 threading.Thread(target=self.run_ai_move, args=(current_depth,), daemon=True).start()
+            elif self.play_mode == 'player_vs_ai' and self.board.turn == chess.BLACK:
+                # If it's black's turn and black is AI, start AI move
+                current_depth = max(1, self.depth_var.get())
+                self.ai_thinking = True
+                self.status.config(text='AI is thinking...')
+                self.master.config(cursor='watch')
+                threading.Thread(target=self.run_ai_move, args=(current_depth,), daemon=True).start()
+            elif self.play_mode == 'training_ai':
+                # Start training AI
+                self.start_training_ai()
+        elif not self.game_started and self.play_mode == 'training_ai':
+            # Stop training AI
+            self.stop_training_ai()
+    
+    def start_training_ai(self) -> None:
+        """Start headless training AI mode."""
+        try:
+            # Stop any existing training
+            if self.training_ai and self.training_ai.running:
+                self.training_ai.stop()
+            
+            # Get current AI depth
+            current_depth = max(1, self.depth_var.get())
+            
+            # Create new training AI instance from UI settings
+            batch_size = max(1, int(self.training_batch_size_var.get() if hasattr(self, 'training_batch_size_var') else 100))
+            move_time_limit = max(0.05, (self.training_move_time_var.get() if hasattr(self, 'training_move_time_var') else 250) / 1000.0)
+            snapshot_batches = int(self.training_snapshot_interval_var.get() if hasattr(self, 'training_snapshot_interval_var') else 0)
+            export_interval = None if snapshot_batches <= 0 else snapshot_batches
+            self.training_ai = TrainingAI(self.ai, depth=current_depth, batch_size=batch_size, export_interval=export_interval, move_time_limit=move_time_limit)
+
+            # Persist training settings
+            if self.config:
+                try:
+                    self.config.set('training_batch_size', batch_size)
+                    self.config.set('training_move_time_ms', int(move_time_limit * 1000))
+                    self.config.set('training_snapshot_batches', int(0 if export_interval is None else export_interval))
+                    self.config.set('training_games', int(self.training_games_var.get() if hasattr(self, 'training_games_var') else 0))
+                except Exception:
+                    pass
+            self.training_ai.start()
+            
+            # Update UI
+            self.status.config(text='Training AI running (headless)...')
+            self.game_started = True
+            self._update_start_pause_button()
+            # Begin polling to reflect progress in the status bar
+            try:
+                self._poll_training_status()
             except Exception:
-                self.ai_thinking = False
+                pass
+        except Exception as e:
+            print(f"Error starting training AI: {e}")
+            messagebox.showerror('Training AI', f'Failed to start training: {e}')
+    
+    def stop_training_ai(self) -> None:
+        """Stop headless training AI mode."""
+        try:
+            if self.training_ai and self.training_ai.running:
+                self.training_ai.stop()
+                self.training_ai = None
+            
+            # Update UI
+            self.status.config(text='Training AI stopped')
+            try:
+                if hasattr(self, 'training_stats_label'):
+                    self.training_stats_label.config(text='Training stopped')
+            except Exception:
+                pass
+            self.game_started = False
+            self._update_start_pause_button()
+        except Exception as e:
+            print(f"Error stopping training AI: {e}")
+
+    def _poll_training_status(self) -> None:
+        """Periodically update the status label with training progress."""
+        try:
+            if self.training_ai and getattr(self.training_ai, 'running', False):
+                g = int(getattr(self.training_ai, 'games_played', 0))
+                res = getattr(self.training_ai, 'results', {'white': 0, 'black': 0, 'draw': 0})
+                mv = int(getattr(self.training_ai, 'current_move_count', 0))
+                # Show current game's move count; games_played is completed games
+                txt = f"Training AI: games {g}  moves:{mv}  W:{res.get('white',0)} B:{res.get('black',0)} D:{res.get('draw',0)}"
+                self.status.config(text=txt)
+                try:
+                    if hasattr(self, 'training_stats_label'):
+                        self.training_stats_label.config(text=f"Games: {g} | Moves: {mv} | W:{res.get('white',0)} B:{res.get('black',0)} D:{res.get('draw',0)}")
+                except Exception:
+                    pass
+                # Poll again in ~1s
+                self.master.after(1000, self._poll_training_status)
+        except Exception:
+            # Best-effort UI heartbeat; ignore transient errors
+            try:
+                self.master.after(1000, self._poll_training_status)
+            except Exception:
+                pass
+    
+    def _update_start_pause_button(self) -> None:
+        """Update the Start/Pause button appearance based on game state."""
+        if hasattr(self, 'start_pause_button'):
+            if self.game_started:
+                self.start_pause_button.config(text='\u23f8 Pause Game', bg='#ff9800')
+            else:
+                self.start_pause_button.config(text='\u25b6 Start Game', bg='#4CAF50')
     
     def toggle_sound(self) -> None:
         """Toggle sound effects on/off."""
@@ -1856,6 +2436,105 @@ class GameController:
         
         if self.config:
             self.config.set('clock_enabled', self.clock_enabled)
+
+    def on_toggle_compress(self) -> None:
+        """Toggle gzip compression for learning data."""
+        try:
+            if hasattr(self, 'ai') and self.ai:
+                val = bool(self.compress_learning_var.get())
+                self.ai.compress_learning = val
+                if self.config:
+                    self.config.set('compress_learning', val)
+        except Exception:
+            pass
+
+    def _build_training_cli(self) -> str:
+        """Build the CLI command for training with current UI settings."""
+        try:
+            depth = max(1, int(self.depth_var.get())) if hasattr(self, 'depth_var') else 3
+            batch = max(1, int(self.training_batch_size_var.get())) if hasattr(self, 'training_batch_size_var') else 100
+            move_ms = int(self.training_move_time_var.get()) if hasattr(self, 'training_move_time_var') else 250
+            snaps = int(self.training_snapshot_interval_var.get()) if hasattr(self, 'training_snapshot_interval_var') else 0
+            games = int(self.training_games_var.get()) if hasattr(self, 'training_games_var') else 0
+            compress = bool(self.compress_learning_var.get()) if hasattr(self, 'compress_learning_var') else True
+            parts = ["python", "main.py", "--training", f"--depth", str(depth), f"--batch-size", str(batch), f"--move-ms", str(move_ms)]
+            if snaps > 0:
+                parts += ["--snapshot-batches", str(snaps)]
+            if games > 0:
+                parts += ["--games", str(games)]
+            if not compress:
+                parts += ["--no-compress"]
+            return " ".join(parts)
+        except Exception:
+            return "python main.py --training"
+
+    def copy_training_command(self) -> None:
+        """Copy a ready-to-run training CLI command to clipboard."""
+        try:
+            cmd = self._build_training_cli()
+            self.master.clipboard_clear()
+            self.master.clipboard_append(cmd)
+            try:
+                self.master.update()
+            except Exception:
+                pass
+            messagebox.showinfo('Training', 'Training command copied to clipboard.')
+        except Exception as e:
+            messagebox.showerror('Training', f'Failed to copy command: {e}')
+
+    def run_training_now(self) -> None:
+        """Launch a new console window running training with current settings."""
+        try:
+            import subprocess, sys, os
+            # Ensure we run from the chess folder so main.py is resolvable
+            cwd = os.path.dirname(__file__)
+            # Build args list for robust subprocess call
+            depth = max(1, int(self.depth_var.get())) if hasattr(self, 'depth_var') else 3
+            batch = max(1, int(self.training_batch_size_var.get())) if hasattr(self, 'training_batch_size_var') else 100
+            move_ms = int(self.training_move_time_var.get()) if hasattr(self, 'training_move_time_var') else 250
+            snaps = int(self.training_snapshot_interval_var.get()) if hasattr(self, 'training_snapshot_interval_var') else 0
+            games = int(self.training_games_var.get()) if hasattr(self, 'training_games_var') else 0
+            compress = bool(self.compress_learning_var.get()) if hasattr(self, 'compress_learning_var') else True
+            args = [sys.executable, 'main.py', '--training', '--depth', str(depth), '--batch-size', str(batch), '--move-ms', str(move_ms)]
+            if snaps > 0:
+                args += ['--snapshot-batches', str(snaps)]
+            if games > 0:
+                args += ['--games', str(games)]
+            if not compress:
+                args += ['--no-compress']
+            creationflags = 0
+            try:
+                # On Windows, open in a new console window
+                creationflags = getattr(subprocess, 'CREATE_NEW_CONSOLE', 0)
+            except Exception:
+                pass
+            subprocess.Popen(args, cwd=cwd, creationflags=creationflags)
+            messagebox.showinfo('Training', 'Started training in a new console window. Check that window for logs.\nUse Stop/Close there to end training.')
+        except Exception as e:
+            messagebox.showerror('Training', f'Failed to launch training: {e}')
+
+    def reset_training_defaults(self) -> None:
+        """Restore training and compression defaults and persist them."""
+        try:
+            # Defaults
+            default_batch = 100
+            default_move_ms = 250
+            default_snap = 0
+            default_compress = True
+            # Update UI vars
+            self.training_batch_size_var.set(default_batch)
+            self.training_move_time_var.set(default_move_ms)
+            self.training_snapshot_interval_var.set(default_snap)
+            self.compress_learning_var.set(default_compress)
+            # Apply compression immediately
+            self.on_toggle_compress()
+            # Persist training settings
+            if self.config:
+                self.config.set('training_batch_size', default_batch)
+                self.config.set('training_move_time_ms', default_move_ms)
+                self.config.set('training_snapshot_batches', default_snap)
+        except Exception:
+            pass
 
     # ---- Learning controls ----
     def reset_learning(self) -> None:
@@ -2209,7 +2888,7 @@ class GameController:
                 self.board.pop()
                 self.board_view.clear_highlights()
                 self.selected = None
-                self.update_board()
+                self.update_board(force=True)
         except Exception:
             pass
 
@@ -2309,7 +2988,7 @@ class GameController:
             for mv in game.mainline_moves():
                 board.push(mv)
             self.board = board
-            self.update_board()
+            self.update_board(force=True)
         except Exception as e:
             messagebox.showerror('Error', f'Failed to load PGN: {e}')
 
