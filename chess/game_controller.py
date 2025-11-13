@@ -1436,6 +1436,12 @@ class GameController:
                 pass
         tk.Checkbutton(learn_frame, text='Use Learning Bias', variable=self.learn_use_var,
                        command=toggle_learning, font=('Arial', 8)).pack(anchor='w', padx=2)
+        
+        # Learning status display
+        self.learning_status_label = tk.Label(learn_frame, text='', font=('Arial', 7), fg='blue')
+        self.learning_status_label.pack(padx=2, pady=1)
+        self.update_learning_status()
+        
         btns = tk.Frame(learn_frame)
         btns.pack(fill='x', padx=2, pady=2)
         tk.Button(btns, text='Show Position', command=self.show_learning_for_position,
@@ -1755,6 +1761,8 @@ class GameController:
                         result = 'black' if self.board.turn == chess.WHITE else 'white'
                     self.ai.finalize_game(result)
                     self._learn_finalized = True
+                    # Update learning status display
+                    self.update_learning_status()
                     # Auto-save PGN if enabled
                     try:
                         if bool(self.autosave_pgn_var.get() if hasattr(self, 'autosave_pgn_var') else False) and not getattr(self, '_autosave_done', False):
@@ -1955,6 +1963,7 @@ class GameController:
                         f.write('{}')
                 except Exception:
                     pass
+                self.update_learning_status()
                 messagebox.showinfo('Learning', 'Learning data has been reset.')
         except Exception as e:
             messagebox.showerror('Learning', f'Failed to reset: {e}')
@@ -2020,9 +2029,35 @@ class GameController:
                 self.ai.export_readable_learning()
             except Exception:
                 pass
+            self.update_learning_status()
             messagebox.showinfo('Learning', f'Merged {merged} entries into learning database.')
         except Exception as e:
             messagebox.showerror('Learning', f'Failed to import: {e}')
+    
+    def update_learning_status(self) -> None:
+        """Update the learning status display with current statistics."""
+        try:
+            if not hasattr(self, 'ai') or not self.ai or not hasattr(self, 'learning_status_label'):
+                return
+            
+            # Count positions and total games learned
+            position_count = len(self.ai.learning_db)
+            total_games = 0
+            
+            for key, rec in self.ai.learning_db.items():
+                wins = rec.get('w', 0)
+                losses = rec.get('l', 0)
+                draws = rec.get('d', 0)
+                total_games += wins + losses + draws
+            
+            if position_count == 0:
+                status_text = 'No learned data yet'
+            else:
+                status_text = f'Learned: {position_count} positions, {total_games} games'
+            
+            self.learning_status_label.config(text=status_text)
+        except Exception:
+            pass
 
     def show_learning_for_position(self) -> None:
         try:
