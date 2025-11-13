@@ -56,6 +56,14 @@ except ImportError:
     SoundManager = None  # type: ignore
     ChessClock = None  # type: ignore
 
+# Polyglot opening book support (optional)
+try:
+    from opening_book import PolyglotBook
+    HAS_POLYGLOT = True
+except ImportError:
+    HAS_POLYGLOT = False
+    PolyglotBook = None  # type: ignore
+
 
 class SimpleAI:
     """
@@ -242,6 +250,10 @@ class SimpleAI:
         
         # Toggle for learning bias in move ordering
         self.use_learning = True
+        
+        # Polyglot opening book (optional, loaded externally)
+        self.polyglot_book: 'Optional[PolyglotBook]' = None
+        self.use_polyglot = True  # Prefer Polyglot over hardcoded book when available
 
     # ==================== Learning System ====================
     # These methods handle persistent learning across games
@@ -435,6 +447,36 @@ class SimpleAI:
             return bonus
         except Exception:
             return 0
+
+    # ==================== Polyglot Opening Book ====================
+    
+    def load_polyglot_book(self, book_path: str) -> bool:
+        """
+        Load a Polyglot opening book (.bin file).
+        
+        Polyglot is a standard opening book format used by many chess engines
+        (Stockfish, Cute Chess, Arena, etc.). This provides much stronger
+        opening play than the small hardcoded book.
+        
+        Args:
+            book_path: Path to .bin Polyglot book file
+            
+        Returns:
+            True if book loaded successfully, False otherwise
+        """
+        if not HAS_POLYGLOT:
+            return False
+        
+        try:
+            self.polyglot_book = PolyglotBook(book_path)
+            return True
+        except Exception as e:
+            self.polyglot_book = None
+            return False
+    
+    def unload_polyglot_book(self) -> None:
+        """Unload the current Polyglot book (revert to hardcoded book)."""
+        self.polyglot_book = None
 
     # ==================== Evaluation Functions ====================
     
@@ -907,6 +949,16 @@ class SimpleAI:
             Best move found, or None if no legal moves (shouldn't happen)
         """
         # ===== OPENING BOOK CHECK =====
+        # First, check Polyglot book if available (higher priority, larger database)
+        if self.use_polyglot and self.polyglot_book is not None:
+            try:
+                book_move_uci = self.polyglot_book.get_move(board, random_choice=True)
+                if book_move_uci:
+                    return chess.Move.from_uci(book_move_uci)
+            except Exception:
+                pass  # Fall back to hardcoded book or search
+        
+        # Fallback to hardcoded opening book
         # Check if current position is in our opening book (common opening lines)
         position_fen = board.fen().split(' ')[0]  # Just piece placement, ignore turn/castling
         if position_fen in self.OPENING_BOOK:
@@ -1052,7 +1104,16 @@ class SimpleAI:
         """Choose best move using iterative deepening with time limit."""
         import time
         
-        # Check opening book first
+        # Check Polyglot opening book first (if available)
+        if self.use_polyglot and self.polyglot_book is not None:
+            try:
+                book_move_uci = self.polyglot_book.get_move(board, random_choice=True)
+                if book_move_uci:
+                    return chess.Move.from_uci(book_move_uci)
+            except Exception:
+                pass  # Fall back to hardcoded book or search
+        
+        # Check hardcoded opening book
         position_fen = board.fen().split(' ')[0]
         if position_fen in self.OPENING_BOOK:
             book_moves = self.OPENING_BOOK[position_fen]
@@ -1385,6 +1446,31 @@ class GameController:
                   font=('Arial', 8)).pack(side='left', padx=1)
         tk.Button(btns, text='Reset', command=self.reset_learning,
                   font=('Arial', 8)).pack(side='left', padx=1)
+
+        # Polyglot Opening Book panel
+        if HAS_POLYGLOT:
+            book_frame = tk.LabelFrame(scrollable_frame, text='Opening Book (Polyglot)', font=('Arial', 9, 'bold'))
+            book_frame.pack(fill='x', pady=2, padx=2)
+            
+            self.polyglot_use_var = tk.BooleanVar(value=True)
+            def toggle_polyglot():
+                try:
+                    self.ai.use_polyglot = bool(self.polyglot_use_var.get())
+                except Exception:
+                    pass
+            
+            tk.Checkbutton(book_frame, text='Use Polyglot Book', variable=self.polyglot_use_var,
+                          command=toggle_polyglot, font=('Arial', 8)).pack(anchor='w', padx=2)
+            
+            book_btns = tk.Frame(book_frame)
+            book_btns.pack(fill='x', padx=2, pady=2)
+            tk.Button(book_btns, text='Load Book', command=self.load_opening_book,
+                     font=('Arial', 8)).pack(side='left', padx=1, fill='x', expand=True)
+            tk.Button(book_btns, text='Unload', command=self.unload_opening_book,
+                     font=('Arial', 8)).pack(side='left', padx=1, fill='x', expand=True)
+            
+            self.book_status_label = tk.Label(book_frame, text='No book loaded', font=('Arial', 7), fg='gray')
+            self.book_status_label.pack(padx=2, pady=1)
 
         # Engine frame - more compact
         engine_frame = tk.LabelFrame(scrollable_frame, text='Engine (Advanced)', font=('Arial', 9, 'bold'))
@@ -1973,6 +2059,46 @@ class GameController:
             tk.Button(dlg, text='Close', command=dlg.destroy, font=('Arial', 8)).pack(pady=6)
         except Exception as e:
             messagebox.showerror('Learning', f'Failed to show learning: {e}')
+    
+    def load_opening_book(self) -> None:
+        """Load a Polyglot opening book (.bin file)."""
+        try:
+            if not HAS_POLYGLOT:
+                messagebox.showinfo('Opening Book', 'Polyglot support not available.\nThe opening_book module may be missing.')
+                return
+            
+            path = filedialog.askopenfilename(
+                title='Select Polyglot Book',
+                filetypes=[('Polyglot Book', '*.bin'), ('All files', '*.*')]
+            )
+            if not path:
+                return
+            
+            success = self.ai.load_polyglot_book(path)
+            if success:
+                book_name = os.path.basename(path)
+                if hasattr(self, 'book_status_label'):
+                    self.book_status_label.config(text=f'Loaded: {book_name}', fg='green')
+                messagebox.showinfo('Opening Book', f'Successfully loaded:\n{book_name}')
+            else:
+                if hasattr(self, 'book_status_label'):
+                    self.book_status_label.config(text='Failed to load', fg='red')
+                messagebox.showerror('Opening Book', 'Failed to load book.\nCheck file format.')
+        except Exception as e:
+            if hasattr(self, 'book_status_label'):
+                self.book_status_label.config(text='Error', fg='red')
+            messagebox.showerror('Opening Book', f'Error loading book:\n{e}')
+    
+    def unload_opening_book(self) -> None:
+        """Unload the current Polyglot book."""
+        try:
+            if hasattr(self, 'ai') and self.ai:
+                self.ai.unload_polyglot_book()
+                if hasattr(self, 'book_status_label'):
+                    self.book_status_label.config(text='No book loaded', fg='gray')
+                messagebox.showinfo('Opening Book', 'Book unloaded successfully.')
+        except Exception as e:
+            messagebox.showerror('Opening Book', f'Error unloading book:\n{e}')
     
     def reset_clock(self) -> None:
         """Reset chess clock to initial time."""
