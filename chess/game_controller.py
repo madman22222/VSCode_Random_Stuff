@@ -56,6 +56,14 @@ except ImportError:
     SoundManager = None  # type: ignore
     ChessClock = None  # type: ignore
 
+# Polyglot opening book support (optional)
+try:
+    from opening_book import PolyglotBook
+    HAS_POLYGLOT = True
+except ImportError:
+    HAS_POLYGLOT = False
+    PolyglotBook = None  # type: ignore
+
 
 class Tooltip:
     """Simple tooltip for Tk widgets."""
@@ -267,6 +275,7 @@ class SimpleAI:
         # Value: (score, depth_searched, bound_flag, best_move_uci)
         # Bound flags: 'EXACT' (= real value), 'LOWER' (>=), 'UPPER' (<=)
         self.transposition_table: dict = {}
+        self.tt_max_size = 500000  # Limit to ~500k entries (about 50-100MB)
         
         # Killer moves: non-capture moves that caused beta cutoffs at each depth
         # Key: depth (int), Value: list of up to 2 move UCIs
@@ -292,6 +301,10 @@ class SimpleAI:
         
         # Toggle for learning bias in move ordering
         self.use_learning = True
+        
+        # Polyglot opening book (optional, loaded externally)
+        self.polyglot_book: 'Optional[PolyglotBook]' = None
+        self.use_polyglot = True  # Prefer Polyglot over hardcoded book when available
 
         # Training persistence and storage controls
         # When defer_persistence is True, finalize_game will batch disk writes
@@ -526,6 +539,36 @@ class SimpleAI:
             return bonus
         except Exception:
             return 0
+
+    # ==================== Polyglot Opening Book ====================
+    
+    def load_polyglot_book(self, book_path: str) -> bool:
+        """
+        Load a Polyglot opening book (.bin file).
+        
+        Polyglot is a standard opening book format used by many chess engines
+        (Stockfish, Cute Chess, Arena, etc.). This provides much stronger
+        opening play than the small hardcoded book.
+        
+        Args:
+            book_path: Path to .bin Polyglot book file
+            
+        Returns:
+            True if book loaded successfully, False otherwise
+        """
+        if not HAS_POLYGLOT:
+            return False
+        
+        try:
+            self.polyglot_book = PolyglotBook(book_path)
+            return True
+        except Exception as e:
+            self.polyglot_book = None
+            return False
+    
+    def unload_polyglot_book(self) -> None:
+        """Unload the current Polyglot book (revert to hardcoded book)."""
+        self.polyglot_book = None
 
     # ==================== Evaluation Functions ====================
     
@@ -782,7 +825,7 @@ class SimpleAI:
         
         return False
 
-    def quiescence(self, board: chess.Board, alpha: int, beta: int) -> int:
+    def quiescence(self, board: chess.Board, alpha: int, beta: int, depth: int = 0) -> int:
         """
         Quiescence search: extends search to stable positions to avoid horizon effect.
         
@@ -795,6 +838,10 @@ class SimpleAI:
         Solution: At depth 0, keep searching until position is "quiet" (no captures).
         Only tactical moves (captures) are searched, not all moves.
         
+        Optimizations:
+        - Delta pruning: Skip captures that can't possibly improve alpha
+        - Depth limit: Prevent excessive quiescence search depth
+        
         This is much cheaper than full search because:
         1. Only ~5-10% of legal moves are captures
         2. We stop as soon as position stabilizes (stand_pat evaluation)
@@ -802,10 +849,15 @@ class SimpleAI:
         Args:
             board: Current position
             alpha, beta: Alpha-beta bounds
+            depth: Current quiescence depth (for limiting search)
             
         Returns:
             Evaluation score when position is stable
         """
+        # Limit quiescence search depth to prevent explosion
+        if depth >= 8:
+            return self.evaluate(board)
+        
         # ===== STAND-PAT EVALUATION =====
         # Evaluate current position without any moves
         # If this is already good enough (>= beta), we can stop
@@ -816,6 +868,13 @@ class SimpleAI:
         if alpha < stand_pat:
             alpha = stand_pat  # Update alpha if current position is better
         
+        # ===== DELTA PRUNING =====
+        # If even capturing a queen can't raise alpha, skip search
+        # This saves ~30-40% of quiescence nodes
+        BIG_DELTA = 975  # Queen value + margin
+        if stand_pat < alpha - BIG_DELTA:
+            return alpha  # Hopeless position, even best capture won't help
+        
         # ===== CAPTURE-ONLY SEARCH =====
         # Generate only capture moves (tactical)
         capture_moves = [move for move in board.legal_moves if board.is_capture(move)]
@@ -824,8 +883,15 @@ class SimpleAI:
         capture_moves.sort(key=lambda m: self._move_score(board, m), reverse=True)
         
         for move in capture_moves:
+            # Delta pruning per move: skip if captured piece value won't help
+            captured_piece = board.piece_at(move.to_square)
+            if captured_piece:
+                delta = self.PIECE_VALUES.get(captured_piece.piece_type, 0)
+                if stand_pat + delta + 200 < alpha:  # 200 = positional margin
+                    continue  # Skip this capture, won't improve alpha
+            
             board.push(move)
-            score = -self.quiescence(board, -beta, -alpha)  # Recursive quiescence
+            score = -self.quiescence(board, -beta, -alpha, depth + 1)  # Recursive quiescence
             board.pop()
             
             if score >= beta:
@@ -884,13 +950,51 @@ class SimpleAI:
             self.transposition_table[fen] = (score, depth, 'EXACT', None)
             return score
         
+        # ===== NULL MOVE PRUNING =====
+        # If we're not in check and passing our turn still leads to beta cutoff,
+        # we can prune this branch. This is safe because:
+        # - If doing nothing is too good (>= beta), any real move will be even better
+        # - Zugzwang positions (where passing would be better) are rare in middlegame
+        #
+        # This typically saves 20-30% of nodes searched.
+        NULL_MOVE_R = 2  # Reduction for null move search
+        if (depth >= 3 and 
+            not board.is_check() and 
+            # Don't do null move in endgame (zugzwang risk) or when in check
+            len(list(board.legal_moves)) > 3):  # Not in zugzwang-prone positions
+            try:
+                board.push(chess.Move.null())
+                score = -self.negamax(board, depth - NULL_MOVE_R - 1, -beta, -beta + 1)
+                board.pop()
+                
+                if score >= beta:
+                    # Null move caused beta cutoff, real moves will be even better
+                    return beta
+            except:
+                # Null move might not be legal in some positions
+                pass
+        
         # ===== DEPTH LIMIT REACHED: QUIESCENCE SEARCH =====
         # At depth 0, we don't stop immediately—we search tactical moves to avoid
         # the "horizon effect" (e.g., stopping mid-capture sequence)
         if depth == 0:
-            score = self.quiescence(board, alpha, beta)
+            score = self.quiescence(board, alpha, beta, 0)
             self.transposition_table[fen] = (score, depth, 'EXACT', None)
             return score
+        
+        # ===== FUTILITY PRUNING =====
+        # At low depths, if our position is very bad and a quiet move can't save us,
+        # skip the move. This saves time on clearly losing positions.
+        # Only apply when not in check (we must search all moves in check).
+        if depth <= 2 and not board.is_check():
+            # Futility margins: how much a quiet move can improve position
+            futility_margins = [0, 300, 500]  # depth 0, 1, 2
+            static_eval = self.evaluate(board)
+            
+            if static_eval + futility_margins[depth] <= alpha:
+                # Position is so bad that quiet moves won't help
+                # Still search captures (via quiescence)
+                return self.quiescence(board, alpha, beta, 0)
 
         # ===== MOVE GENERATION AND ORDERING =====
         max_score = -9999999
@@ -977,7 +1081,26 @@ class SimpleAI:
             flag = 'LOWER'  # Real score could be higher, but at least max_score
             
         self.transposition_table[fen] = (max_score, depth, flag, best_move.uci() if best_move else None)
+        
+        # Manage transposition table size to prevent memory issues
+        if len(self.transposition_table) > self.tt_max_size:
+            self._trim_transposition_table()
+        
         return max_score
+    
+    def _trim_transposition_table(self) -> None:
+        """
+        Trim transposition table when it gets too large.
+        Keeps entries that were searched at higher depth (more valuable).
+        """
+        # Sort by depth (keeping deeper searches) and take top 80%
+        sorted_entries = sorted(
+            self.transposition_table.items(),
+            key=lambda x: x[1][1],  # x[1][1] is the depth
+            reverse=True
+        )
+        keep_count = int(self.tt_max_size * 0.8)
+        self.transposition_table = dict(sorted_entries[:keep_count])
 
     def choose_move(self, board: chess.Board) -> 'Optional[chess.Move]':
         """
@@ -998,6 +1121,16 @@ class SimpleAI:
             Best move found, or None if no legal moves (shouldn't happen)
         """
         # ===== OPENING BOOK CHECK =====
+        # First, check Polyglot book if available (higher priority, larger database)
+        if self.use_polyglot and self.polyglot_book is not None:
+            try:
+                book_move_uci = self.polyglot_book.get_move(board, random_choice=True)
+                if book_move_uci:
+                    return chess.Move.from_uci(book_move_uci)
+            except Exception:
+                pass  # Fall back to hardcoded book or search
+        
+        # Fallback to hardcoded opening book
         # Check if current position is in our opening book (common opening lines)
         position_fen = board.fen().split(' ')[0]  # Just piece placement, ignore turn/castling
         if position_fen in self.OPENING_BOOK:
@@ -1143,7 +1276,16 @@ class SimpleAI:
         """Choose best move using iterative deepening with time limit."""
         import time
         
-        # Check opening book first
+        # Check Polyglot opening book first (if available)
+        if self.use_polyglot and self.polyglot_book is not None:
+            try:
+                book_move_uci = self.polyglot_book.get_move(board, random_choice=True)
+                if book_move_uci:
+                    return chess.Move.from_uci(book_move_uci)
+            except Exception:
+                pass  # Fall back to hardcoded book or search
+        
+        # Check hardcoded opening book
         position_fen = board.fen().split(' ')[0]
         if position_fen in self.OPENING_BOOK:
             book_moves = self.OPENING_BOOK[position_fen]
@@ -1796,6 +1938,12 @@ class GameController:
                 pass
         tk.Checkbutton(learn_frame, text='Use Learning Bias', variable=self.learn_use_var,
                        command=toggle_learning, font=('Arial', 8)).pack(anchor='w', padx=2)
+        
+        # Learning status display
+        self.learning_status_label = tk.Label(learn_frame, text='', font=('Arial', 7), fg='blue')
+        self.learning_status_label.pack(padx=2, pady=1)
+        self.update_learning_status()
+        
         btns = tk.Frame(learn_frame)
         btns.pack(fill='x', padx=2, pady=2)
         tk.Button(btns, text='Show Position', command=self.show_learning_for_position,
@@ -1806,6 +1954,31 @@ class GameController:
                   font=('Arial', 8)).pack(side='left', padx=1)
         tk.Button(btns, text='Reset', command=self.reset_learning,
                   font=('Arial', 8)).pack(side='left', padx=1)
+
+        # Polyglot Opening Book panel
+        if HAS_POLYGLOT:
+            book_frame = tk.LabelFrame(scrollable_frame, text='Opening Book (Polyglot)', font=('Arial', 9, 'bold'))
+            book_frame.pack(fill='x', pady=2, padx=2)
+            
+            self.polyglot_use_var = tk.BooleanVar(value=True)
+            def toggle_polyglot():
+                try:
+                    self.ai.use_polyglot = bool(self.polyglot_use_var.get())
+                except Exception:
+                    pass
+            
+            tk.Checkbutton(book_frame, text='Use Polyglot Book', variable=self.polyglot_use_var,
+                          command=toggle_polyglot, font=('Arial', 8)).pack(anchor='w', padx=2)
+            
+            book_btns = tk.Frame(book_frame)
+            book_btns.pack(fill='x', padx=2, pady=2)
+            tk.Button(book_btns, text='Load Book', command=self.load_opening_book,
+                     font=('Arial', 8)).pack(side='left', padx=1, fill='x', expand=True)
+            tk.Button(book_btns, text='Unload', command=self.unload_opening_book,
+                     font=('Arial', 8)).pack(side='left', padx=1, fill='x', expand=True)
+            
+            self.book_status_label = tk.Label(book_frame, text='No book loaded', font=('Arial', 7), fg='gray')
+            self.book_status_label.pack(padx=2, pady=1)
 
         # Engine frame - more compact
         engine_frame = tk.LabelFrame(scrollable_frame, text='Engine (Advanced)', font=('Arial', 9, 'bold'))
@@ -2121,6 +2294,8 @@ class GameController:
                         result = 'black' if self.board.turn == chess.WHITE else 'white'
                     self.ai.finalize_game(result)
                     self._learn_finalized = True
+                    # Update learning status display
+                    self.update_learning_status()
                     # Auto-save PGN if enabled
                     try:
                         if bool(self.autosave_pgn_var.get() if hasattr(self, 'autosave_pgn_var') else False) and not getattr(self, '_autosave_done', False):
@@ -2548,6 +2723,7 @@ class GameController:
                         f.write('{}')
                 except Exception:
                     pass
+                self.update_learning_status()
                 messagebox.showinfo('Learning', 'Learning data has been reset.')
         except Exception as e:
             messagebox.showerror('Learning', f'Failed to reset: {e}')
@@ -2613,9 +2789,35 @@ class GameController:
                 self.ai.export_readable_learning()
             except Exception:
                 pass
+            self.update_learning_status()
             messagebox.showinfo('Learning', f'Merged {merged} entries into learning database.')
         except Exception as e:
             messagebox.showerror('Learning', f'Failed to import: {e}')
+    
+    def update_learning_status(self) -> None:
+        """Update the learning status display with current statistics."""
+        try:
+            if not hasattr(self, 'ai') or not self.ai or not hasattr(self, 'learning_status_label'):
+                return
+            
+            # Count positions and total games learned
+            position_count = len(self.ai.learning_db)
+            total_games = 0
+            
+            for key, rec in self.ai.learning_db.items():
+                wins = rec.get('w', 0)
+                losses = rec.get('l', 0)
+                draws = rec.get('d', 0)
+                total_games += wins + losses + draws
+            
+            if position_count == 0:
+                status_text = 'No learned data yet'
+            else:
+                status_text = f'Learned: {position_count} positions, {total_games} games'
+            
+            self.learning_status_label.config(text=status_text)
+        except Exception:
+            pass
 
     def show_learning_for_position(self) -> None:
         try:
@@ -2652,6 +2854,46 @@ class GameController:
             tk.Button(dlg, text='Close', command=dlg.destroy, font=('Arial', 8)).pack(pady=6)
         except Exception as e:
             messagebox.showerror('Learning', f'Failed to show learning: {e}')
+    
+    def load_opening_book(self) -> None:
+        """Load a Polyglot opening book (.bin file)."""
+        try:
+            if not HAS_POLYGLOT:
+                messagebox.showinfo('Opening Book', 'Polyglot support not available.\nThe opening_book module may be missing.')
+                return
+            
+            path = filedialog.askopenfilename(
+                title='Select Polyglot Book',
+                filetypes=[('Polyglot Book', '*.bin'), ('All files', '*.*')]
+            )
+            if not path:
+                return
+            
+            success = self.ai.load_polyglot_book(path)
+            if success:
+                book_name = os.path.basename(path)
+                if hasattr(self, 'book_status_label'):
+                    self.book_status_label.config(text=f'Loaded: {book_name}', fg='green')
+                messagebox.showinfo('Opening Book', f'Successfully loaded:\n{book_name}')
+            else:
+                if hasattr(self, 'book_status_label'):
+                    self.book_status_label.config(text='Failed to load', fg='red')
+                messagebox.showerror('Opening Book', 'Failed to load book.\nCheck file format.')
+        except Exception as e:
+            if hasattr(self, 'book_status_label'):
+                self.book_status_label.config(text='Error', fg='red')
+            messagebox.showerror('Opening Book', f'Error loading book:\n{e}')
+    
+    def unload_opening_book(self) -> None:
+        """Unload the current Polyglot book."""
+        try:
+            if hasattr(self, 'ai') and self.ai:
+                self.ai.unload_polyglot_book()
+                if hasattr(self, 'book_status_label'):
+                    self.book_status_label.config(text='No book loaded', fg='gray')
+                messagebox.showinfo('Opening Book', 'Book unloaded successfully.')
+        except Exception as e:
+            messagebox.showerror('Opening Book', f'Error unloading book:\n{e}')
     
     def reset_clock(self) -> None:
         """Reset chess clock to initial time."""
