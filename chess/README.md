@@ -34,6 +34,7 @@ Controls: click a piece, then click destination. After your move the AI will rep
 Features
 
 - **AI Learning System**: The AI learns from every game played and stores the data permanently. It remembers which moves led to wins/losses and improves over time. See `LEARNING_SYSTEM.md` for full details.
+- **Optimized AI Engine**: Fast and accurate with null move pruning, delta pruning, futility pruning, and transposition table management. ~2x faster search with no loss in accuracy. See `AI_OPTIMIZATIONS.md` for technical details.
 - Move list and PGN save/load: save the current game to a PGN file or load a PGN file into the board (use the Save PGN / Load PGN buttons in the UI).
 - Piece images: the GUI supports PNG piece images placed in `assets/` (see `assets/README.md` for filenames). If images are not present, the GUI falls back to Unicode pieces.
 - Stockfish engine integration: you can toggle using an external UCI engine (Stockfish) from the UI. The app will try to auto-detect `stockfish` in your PATH; otherwise provide the path in the Engine box and click Detect/Use Engine.

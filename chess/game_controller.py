@@ -226,6 +226,7 @@ class SimpleAI:
         # Value: (score, depth_searched, bound_flag, best_move_uci)
         # Bound flags: 'EXACT' (= real value), 'LOWER' (>=), 'UPPER' (<=)
         self.transposition_table: dict = {}
+        self.tt_max_size = 500000  # Limit to ~500k entries (about 50-100MB)
         
         # Killer moves: non-capture moves that caused beta cutoffs at each depth
         # Key: depth (int), Value: list of up to 2 move UCIs
@@ -733,7 +734,7 @@ class SimpleAI:
         
         return False
 
-    def quiescence(self, board: chess.Board, alpha: int, beta: int) -> int:
+    def quiescence(self, board: chess.Board, alpha: int, beta: int, depth: int = 0) -> int:
         """
         Quiescence search: extends search to stable positions to avoid horizon effect.
         
@@ -746,6 +747,10 @@ class SimpleAI:
         Solution: At depth 0, keep searching until position is "quiet" (no captures).
         Only tactical moves (captures) are searched, not all moves.
         
+        Optimizations:
+        - Delta pruning: Skip captures that can't possibly improve alpha
+        - Depth limit: Prevent excessive quiescence search depth
+        
         This is much cheaper than full search because:
         1. Only ~5-10% of legal moves are captures
         2. We stop as soon as position stabilizes (stand_pat evaluation)
@@ -753,10 +758,15 @@ class SimpleAI:
         Args:
             board: Current position
             alpha, beta: Alpha-beta bounds
+            depth: Current quiescence depth (for limiting search)
             
         Returns:
             Evaluation score when position is stable
         """
+        # Limit quiescence search depth to prevent explosion
+        if depth >= 8:
+            return self.evaluate(board)
+        
         # ===== STAND-PAT EVALUATION =====
         # Evaluate current position without any moves
         # If this is already good enough (>= beta), we can stop
@@ -767,6 +777,13 @@ class SimpleAI:
         if alpha < stand_pat:
             alpha = stand_pat  # Update alpha if current position is better
         
+        # ===== DELTA PRUNING =====
+        # If even capturing a queen can't raise alpha, skip search
+        # This saves ~30-40% of quiescence nodes
+        BIG_DELTA = 975  # Queen value + margin
+        if stand_pat < alpha - BIG_DELTA:
+            return alpha  # Hopeless position, even best capture won't help
+        
         # ===== CAPTURE-ONLY SEARCH =====
         # Generate only capture moves (tactical)
         capture_moves = [move for move in board.legal_moves if board.is_capture(move)]
@@ -775,8 +792,15 @@ class SimpleAI:
         capture_moves.sort(key=lambda m: self._move_score(board, m), reverse=True)
         
         for move in capture_moves:
+            # Delta pruning per move: skip if captured piece value won't help
+            captured_piece = board.piece_at(move.to_square)
+            if captured_piece:
+                delta = self.PIECE_VALUES.get(captured_piece.piece_type, 0)
+                if stand_pat + delta + 200 < alpha:  # 200 = positional margin
+                    continue  # Skip this capture, won't improve alpha
+            
             board.push(move)
-            score = -self.quiescence(board, -beta, -alpha)  # Recursive quiescence
+            score = -self.quiescence(board, -beta, -alpha, depth + 1)  # Recursive quiescence
             board.pop()
             
             if score >= beta:
@@ -835,13 +859,51 @@ class SimpleAI:
             self.transposition_table[fen] = (score, depth, 'EXACT', None)
             return score
         
+        # ===== NULL MOVE PRUNING =====
+        # If we're not in check and passing our turn still leads to beta cutoff,
+        # we can prune this branch. This is safe because:
+        # - If doing nothing is too good (>= beta), any real move will be even better
+        # - Zugzwang positions (where passing would be better) are rare in middlegame
+        #
+        # This typically saves 20-30% of nodes searched.
+        NULL_MOVE_R = 2  # Reduction for null move search
+        if (depth >= 3 and 
+            not board.is_check() and 
+            # Don't do null move in endgame (zugzwang risk) or when in check
+            len(list(board.legal_moves)) > 3):  # Not in zugzwang-prone positions
+            try:
+                board.push(chess.Move.null())
+                score = -self.negamax(board, depth - NULL_MOVE_R - 1, -beta, -beta + 1)
+                board.pop()
+                
+                if score >= beta:
+                    # Null move caused beta cutoff, real moves will be even better
+                    return beta
+            except:
+                # Null move might not be legal in some positions
+                pass
+        
         # ===== DEPTH LIMIT REACHED: QUIESCENCE SEARCH =====
         # At depth 0, we don't stop immediately—we search tactical moves to avoid
         # the "horizon effect" (e.g., stopping mid-capture sequence)
         if depth == 0:
-            score = self.quiescence(board, alpha, beta)
+            score = self.quiescence(board, alpha, beta, 0)
             self.transposition_table[fen] = (score, depth, 'EXACT', None)
             return score
+        
+        # ===== FUTILITY PRUNING =====
+        # At low depths, if our position is very bad and a quiet move can't save us,
+        # skip the move. This saves time on clearly losing positions.
+        # Only apply when not in check (we must search all moves in check).
+        if depth <= 2 and not board.is_check():
+            # Futility margins: how much a quiet move can improve position
+            futility_margins = [0, 300, 500]  # depth 0, 1, 2
+            static_eval = self.evaluate(board)
+            
+            if static_eval + futility_margins[depth] <= alpha:
+                # Position is so bad that quiet moves won't help
+                # Still search captures (via quiescence)
+                return self.quiescence(board, alpha, beta, 0)
 
         # ===== MOVE GENERATION AND ORDERING =====
         max_score = -9999999
@@ -928,7 +990,26 @@ class SimpleAI:
             flag = 'LOWER'  # Real score could be higher, but at least max_score
             
         self.transposition_table[fen] = (max_score, depth, flag, best_move.uci() if best_move else None)
+        
+        # Manage transposition table size to prevent memory issues
+        if len(self.transposition_table) > self.tt_max_size:
+            self._trim_transposition_table()
+        
         return max_score
+    
+    def _trim_transposition_table(self) -> None:
+        """
+        Trim transposition table when it gets too large.
+        Keeps entries that were searched at higher depth (more valuable).
+        """
+        # Sort by depth (keeping deeper searches) and take top 80%
+        sorted_entries = sorted(
+            self.transposition_table.items(),
+            key=lambda x: x[1][1],  # x[1][1] is the depth
+            reverse=True
+        )
+        keep_count = int(self.tt_max_size * 0.8)
+        self.transposition_table = dict(sorted_entries[:keep_count])
 
     def choose_move(self, board: chess.Board) -> 'Optional[chess.Move]':
         """
