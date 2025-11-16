@@ -1,0 +1,11 @@
+ply,color,san
+#result,*,
+#white,?,
+#black,?,
+1,W,e4
+2,B,e5
+3,W,Qh5
+4,B,Nc6
+5,W,Bc4
+6,B,Nf6
+7,W,Qxf7#

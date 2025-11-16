@@ -1963,14 +1963,8 @@ class GameController:
         except Exception:
             pass
         
-        # For AI vs AI, wait until previous move is fully processed
-        if self.play_mode == 'ai_vs_ai':
-            # Wait for ai_thinking to be False (previous move completed)
-            max_wait = 50  # Maximum 5 seconds
-            wait_count = 0
-            while self.ai_thinking and wait_count < max_wait:
-                time.sleep(0.1)
-                wait_count += 1
+        # Removed previous wait loop that caused artificial stalls.
+        # We rely on setting ai_thinking True before launching this thread to gate user input.
         # Capture session ID to prevent stale threads from applying moves after a new game
         session_id = self._ai_session_id
         move = None

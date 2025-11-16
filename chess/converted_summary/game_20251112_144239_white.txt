@@ -1,0 +1,6 @@
+Result: *
+White: ?
+Black: ?
+Ply Count: 7
+Moves:
+e4 e5 Qh5 Nc6 Bc4 Nf6 Qxf7#

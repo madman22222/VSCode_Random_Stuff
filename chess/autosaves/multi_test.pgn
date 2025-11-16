@@ -1,0 +1,20 @@
+
+[Event "Test1"]
+[Site "Local"]
+[Date "2025.11.15"]
+[Round "1"]
+[White "Alice"]
+[Black "Bob"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 O-O 8. c3 d5 9. exd5 Nxd5 10. Nxe5 Nxe5 11. Rxe5 Nf4 12. d4 Bd6 13. Bxf4 1-0
+
+[Event "Test2"]
+[Site "Local"]
+[Date "2025.11.15"]
+[Round "2"]
+[White "Carol"]
+[Black "Dave"]
+[Result "0-1"]
+
+1. d4 Nf6 2. c4 e6 3. Nc3 Bb4 4. e3 O-O 5. Bd3 d5 6. Nf3 c5 7. O-O Nc6 8. a3 Bxc3 9. bxc3 dxc4 10. Bxc4 Qc7 11. Qe2 e5 12. d5 e4 13. dxc6 exf3 14. Qxf3 Ng4 0-1

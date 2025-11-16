@@ -1,0 +1,5 @@
+Result: *
+White: ?
+Black: ?
+Ply Count: 0
+Moves:
