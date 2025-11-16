@@ -33,10 +33,10 @@ jobs:
           path: metrics_sample.csv
       - name: Run tests with coverage (discovery)
         run: |
-          C:/Users/buggu/Documents/GitHub/VSCode_Random_Stuff/.venv/Scripts/python.exe -m coverage run -m unittest discover -v chess/tests
+          coverage run -m unittest discover -v chess/tests
       - name: Run explicit test modules (fallback)
         run: |
-          C:/Users/buggu/Documents/GitHub/VSCode_Random_Stuff/.venv/Scripts/python.exe -m coverage run -a -m unittest -v chess.tests.test_game_controller chess.tests.test_special_moves
+          coverage run -a -m unittest -v chess.tests.test_game_controller chess.tests.test_special_moves
       - name: Generate coverage reports
         run: |
           coverage xml || true
@@ -44,7 +44,10 @@ jobs:
           coverage report -m > coverage.txt || true
       - name: Save test output & coverage summary
         run: |
-          python -m unittest -v chess.tests.test_game_controller chess.tests.test_special_moves > test-results.txt 2>&1 || true
+          python -m unittest -v chess.tests.test_game_controller chess.tests.test_special_moves > test-results.txt 2>&1
+      - name: Enforce coverage threshold
+        run: |
+          coverage report --fail-under=35
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         with:
