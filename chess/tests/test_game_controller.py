@@ -221,6 +221,11 @@ class TestGameControllerMocked(unittest.TestCase):
         controller.engine_enabled = True
         # Use object.__setattr__ to bypass type checking for mock
         object.__setattr__(controller, 'engine', self.mock_engine)
+        # Ensure adapter sees engine as running
+        try:
+            controller.engine_adapter._mgr.engine = self.mock_engine
+        except Exception:
+            pass
         
         # Mock engine move
         mock_move = chess.Move.from_uci("e2e4")

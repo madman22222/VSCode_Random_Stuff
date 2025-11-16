@@ -38,6 +38,7 @@ Features
 - Stockfish engine integration: you can toggle using an external UCI engine (Stockfish) from the UI. The app will try to auto-detect `stockfish` in your PATH; otherwise provide the path in the Engine box and click Detect/Use Engine.
 - Search metrics display: per-move depth, node count, branching factor, elapsed time, and source (book / iterative / aspiration / engine) with running averages.
 - Metrics CSV export: click "Export Metrics CSV" to save collected metrics for analysis.
+ - CI metrics artifact: workflow generates a small self-play sample (`metrics_sample.csv`) for quick inspection of search performance.
 
 Downloader and verification
 
