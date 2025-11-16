@@ -36,6 +36,8 @@ Features
 - Move list and PGN save/load: save the current game to a PGN file or load a PGN file into the board (use the Save PGN / Load PGN buttons in the UI).
 - Piece images: the GUI supports PNG piece images placed in `assets/` (see `assets/README.md` for filenames). If images are not present, the GUI falls back to Unicode pieces.
 - Stockfish engine integration: you can toggle using an external UCI engine (Stockfish) from the UI. The app will try to auto-detect `stockfish` in your PATH; otherwise provide the path in the Engine box and click Detect/Use Engine.
+- Search metrics display: per-move depth, node count, branching factor, elapsed time, and source (book / iterative / aspiration / engine) with running averages.
+- Metrics CSV export: click "Export Metrics CSV" to save collected metrics for analysis.
 
 Downloader and verification
 

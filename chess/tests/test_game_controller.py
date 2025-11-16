@@ -208,6 +208,12 @@ class TestGameControllerMocked(unittest.TestCase):
         
         # Verify AI made a move
         self.assertEqual(len(controller.board.move_stack), initial_moves + 1)
+        # Metrics should be populated
+        self.assertTrue(hasattr(controller.ai, 'last_move_metrics'))
+        lm = controller.ai.last_move_metrics
+        self.assertIn('move', lm)
+        self.assertIn('depth', lm)
+        self.assertIn('time', lm)
 
     def test_run_ai_move_with_engine(self):
         """Test run_ai_move with Stockfish engine."""
@@ -226,6 +232,10 @@ class TestGameControllerMocked(unittest.TestCase):
         # Verify engine was called and move made
         self.mock_engine.play.assert_called_once()
         self.assertEqual(len(controller.board.move_stack), initial_moves + 1)
+        # Engine metrics recorded (time & branching, nodes may be None)
+        self.assertTrue(hasattr(controller.ai, 'last_move_metrics'))
+        lm = controller.ai.last_move_metrics
+        self.assertEqual(lm.get('source'), 'engine')
 
     def test_promotion_dialog(self):
         """Test promotion dialog selection."""

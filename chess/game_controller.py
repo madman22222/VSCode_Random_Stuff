@@ -1223,6 +1223,8 @@ class GameController:
         # Metrics display
         self.metrics_var = tk.StringVar(value='Metrics: (none)')
         tk.Label(scrollable_frame, textvariable=self.metrics_var, font=('Arial', 8), fg='#555').pack(pady=2)
+        export_btn = tk.Button(scrollable_frame, text='Export Metrics CSV', command=self.export_metrics_csv, font=('Arial', 8))
+        export_btn.pack(pady=2)
         
         # Game mode selector
         mode_frame = tk.LabelFrame(scrollable_frame, text='Game Mode', font=('Arial', 9, 'bold'))
@@ -1617,6 +1619,8 @@ class GameController:
         # Capture session ID to prevent stale threads from applying moves after a new game
         session_id = self._ai_session_id
         move = None
+        engine_move_metrics = None
+        start_time = time.time()
         try:
             if self.engine_enabled and self.engine_adapter.is_running():
                 try:
@@ -1624,6 +1628,15 @@ class GameController:
                     move = self.engine_adapter.play_move(self.board, tm)
                     # Engine move: no learning-based explanation
                     self.ai_last_explanation = ''
+                    # Collect simple engine metrics (no node count available)
+                    engine_move_metrics = {
+                        'move': move.uci() if move else None,
+                        'depth': depth,
+                        'nodes': None,
+                        'branching': len(list(self.board.legal_moves)),
+                        'time': None,  # filled below after timing
+                        'source': 'engine'
+                    }
                 except Exception:
                     move = None
             else:
@@ -1667,6 +1680,21 @@ class GameController:
             # Only apply the move if session hasn't changed (no new game/mode switch)
             if move is not None and session_id == self._ai_session_id:
                 self.board.push(move)
+                # Finalize timing and store metrics history
+                elapsed = time.time() - start_time
+                if engine_move_metrics:
+                    engine_move_metrics['time'] = elapsed
+                    try:
+                        self.ai.last_move_metrics = engine_move_metrics
+                    except Exception:
+                        pass
+                # Append to history list
+                try:
+                    if not hasattr(self, 'metrics_history'):
+                        self.metrics_history = []
+                    self.metrics_history.append(getattr(self.ai, 'last_move_metrics', {}))
+                except Exception:
+                    pass
         except Exception as e:
             print(f"Error in AI move: {e}")
         
@@ -1696,9 +1724,19 @@ class GameController:
             try:
                 if hasattr(self, 'metrics_var') and hasattr(self.ai, 'last_move_metrics'):
                     m = self.ai.last_move_metrics or {}
+                    avg_txt = ''
+                    if hasattr(self, 'metrics_history') and self.metrics_history:
+                        total_time = sum(mm.get('time', 0.0) for mm in self.metrics_history if isinstance(mm.get('time'), (int, float)))
+                        total_nodes = sum(mm.get('nodes', 0) for mm in self.metrics_history if isinstance(mm.get('nodes'), int))
+                        count = len(self.metrics_history)
+                        avg_time = total_time / count if count else 0.0
+                        avg_nodes = int(total_nodes / count) if count else 0
+                        avg_txt = f" | avg_time={avg_time:.3f}s avg_nodes={avg_nodes}"
                     if m.get('move'):
+                        tval = m.get('time')
+                        time_part = f"{tval:.3f}s" if isinstance(tval, (int,float)) else 'n/a'
                         txt = (f"Metrics: move={m.get('move')} depth={m.get('depth')} nodes={m.get('nodes')} "
-                               f"branch={m.get('branching')} time={m.get('time'):.3f}s src={m.get('source')}")
+                               f"branch={m.get('branching')} time={time_part} src={m.get('source')}{avg_txt}")
                     else:
                         txt = 'Metrics: (engine move)'
                     self.metrics_var.set(txt)
@@ -1712,6 +1750,26 @@ class GameController:
             print(f"Error finishing AI move: {e}")
             self.ai_thinking = False
             self.master.config(cursor='')
+
+    def export_metrics_csv(self):
+        """Export collected metrics history to a CSV file chosen by user."""
+        if not hasattr(self, 'metrics_history') or not self.metrics_history:
+            messagebox.showinfo('Metrics', 'No metrics collected yet.')
+            return
+        path = filedialog.asksaveasfilename(defaultextension='.csv', filetypes=[('CSV','*.csv')], title='Save Metrics CSV')
+        if not path:
+            return
+        try:
+            import csv
+            keys = ['move','depth','nodes','branching','time','source']
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                w = csv.writer(f)
+                w.writerow(keys)
+                for m in self.metrics_history:
+                    w.writerow([m.get(k) for k in keys])
+            messagebox.showinfo('Metrics', f'Metrics exported to {path}')
+        except Exception as e:
+            messagebox.showerror('Metrics', f'Failed to export metrics: {e}')
 
     def update_board(self, force=False):
         # Throttle UI updates for smoother high-speed AI performance
