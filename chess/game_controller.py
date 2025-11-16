@@ -18,6 +18,7 @@ Architecture:
 - ConfigManager, SoundManager, ChessClock: Optional feature modules
 """
 
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from typing import Optional
@@ -1275,7 +1276,15 @@ class TrainingAI:
         self.thread = threading.Thread(target=self._training_loop, daemon=True)
         self.thread.start()
         print(f"\n{'='*60}")
-        print(f"🎓 TRAINING AI MODE STARTED")
+        # Avoid emoji for wider terminal encoding compatibility
+        try:
+            enc = getattr(sys.stdout, 'encoding', '') or ''
+            if 'UTF' in enc.upper():
+                print("TRAINING AI MODE STARTED")  # Could add emoji if desired
+            else:
+                print("TRAINING AI MODE STARTED")
+        except Exception:
+            print("TRAINING AI MODE STARTED")
         print(f"{'='*60}")
         print(f"AI Depth: {self.depth}")
         print(f"Learning enabled: {self.ai.use_learning}")
@@ -1310,7 +1319,8 @@ class TrainingAI:
             pass
 
         print(f"\n{'='*60}")
-        print(f"🛑 TRAINING AI MODE STOPPED")
+        # ASCII-safe stop banner
+        print("TRAINING AI MODE STOPPED")
         print(f"{'='*60}")
         print(f"Total games played: {self.games_played}")
         print(f"Results: White wins: {self.results['white']}, "
@@ -1331,7 +1341,8 @@ class TrainingAI:
         """Main training loop - runs games continuously."""
         while self.running:
             try:
-                print(f"🚀 Starting game #{self.games_played + 1}...")
+                # ASCII-only banner (removed rocket emoji for encoding compatibility)
+                print(f"Starting game #{self.games_played + 1}...")
                 board = chess.Board()
                 self.ai.game_log = []  # Reset game log
                 
