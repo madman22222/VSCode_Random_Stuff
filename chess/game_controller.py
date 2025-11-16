@@ -23,201 +23,10 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from typing import Optional
 import chess  # type: ignore - Python-chess library handles all chess rules (legal moves, check, checkmate, castling, en passant, etc.)
-import chess.pgn  # type: ignore - For saving/loading games in PGN format
-import chess.engine  # type: ignore - For interfacing with external UCI engines like Stockfish
-import threading  # For running AI search in background without freezing UI
-import time
-import shutil
-import os
-import random
-
-# Optional: PIL for loading custom piece images
-try:
-    from PIL import Image, ImageTk  # type: ignore
-except Exception:
-    from typing import Any
-    Image: Any = None
-    ImageTk: Any = None
-
-# Core components
-from engine_manager import EngineManager  # Manages external UCI chess engines
-from board_view import BoardView  # Visual chess board widget
-from constants import PIECE_UNICODE, THEMES  # Unicode pieces and color themes
-import image_generator  # Fallback piece image generation
-
-# Optional upgrade modules (gracefully degrade if not present)
-try:
-    from config_manager import ConfigManager  # Persistent settings and statistics
-    from sound_manager import SoundManager  # Sound effects for moves
-    from chess_clock import ChessClock  # Chess clock with time controls
-    HAS_UPGRADES = True
-except ImportError:
-    HAS_UPGRADES = False
-    ConfigManager = None  # type: ignore
-    SoundManager = None  # type: ignore
-    ChessClock = None  # type: ignore
-
-
-class Tooltip:
-    """Simple tooltip for Tk widgets."""
-    def __init__(self, widget: tk.Widget, text: str, delay_ms: int = 400):
-        self.widget = widget
-        self.text = text
-        self.delay_ms = delay_ms
-        self._after_id: 'Optional[str]' = None
-        self._tip: 'Optional[tk.Toplevel]' = None
-        try:
-            widget.bind('<Enter>', self._on_enter)
-            widget.bind('<Leave>', self._on_leave)
-        except Exception:
-            pass
-
-    def _on_enter(self, _evt=None):
-        try:
-            self._after_id = self.widget.after(self.delay_ms, self._show)
-        except Exception:
-            pass
-
-    def _on_leave(self, _evt=None):
-        try:
-            if self._after_id:
-                self.widget.after_cancel(self._after_id)
-                self._after_id = None
-            if self._tip:
-                self._tip.destroy()
-                self._tip = None
-        except Exception:
-            pass
-
-    def _show(self):
-        try:
-            if self._tip is not None:
-                return
-            x = self.widget.winfo_rootx() + 20
-            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 8
-            tip = tk.Toplevel(self.widget)
-            tip.wm_overrideredirect(True)
-            tip.geometry(f"+{x}+{y}")
-            lbl = tk.Label(tip, text=self.text, justify='left',
-                           background='#FFFFE0', relief='solid', borderwidth=1,
-                           font=('Arial', 9))
-            lbl.pack(ipadx=6, ipady=3)
-            self._tip = tip
-        except Exception:
-            pass
-
-
-class SimpleAI:
-    """
-    Advanced Chess AI with Learning Capability
-    ==========================================
-    
-    This AI combines traditional chess engine techniques with a lightweight learning system:
-    
-    Search Algorithms:
-    - Negamax with alpha-beta pruning (minimax for zero-sum games)
-    - Principal Variation Search (PVS): null-window searches for non-PV nodes
-    - Late Move Reductions (LMR): reduce search depth for unlikely moves
-    - Quiescence search: extend search at leaf nodes to avoid horizon effect
-    - Iterative deepening with aspiration windows: gradually increase depth with narrow search windows
-    - Transposition table: cache position evaluations with bound flags (EXACT/LOWER/UPPER)
-    
-    Move Ordering (critical for pruning efficiency):
-    - Transposition table best move (highest priority)
-    - Killer moves: non-capture moves that caused beta cutoffs at same depth
-    - History heuristic: moves that historically caused cutoffs
-    - MVV-LVA for captures: Most Valuable Victim - Least Valuable Attacker
-    - Learned preference bonus: small bias from past game outcomes
-    
-    Evaluation Function:
-    - Material counting with piece values
-    - Piece-square tables (positional bonuses)
-    - King safety (different for middlegame vs endgame)
-    - Mobility (number of legal moves)
-    - Pawn structure analysis
-    - Bishop pair bonus
-    - Tapered evaluation (smooth transition from opening to endgame)
-    
-    Learning System:
-    - Records each chosen root move with (position_fen, move_uci, color_to_move)
-    - On game end, updates win/loss/draw counts per (position, move) pair
-    - Persists to ai_learn.json for incremental improvement across sessions
-    - Exports human-readable ai_learn_readable.json with winrates and ordering bonuses
-    - Small learned bonus (+/- 100 range) added to move ordering (doesn't override evaluation)
-    - Works in all game modes including AI vs AI self-play
-    
-    The python-chess library ensures all moves follow official FIDE rules.
-    """
-    
-    # Material values in centipawns (1 pawn = 100)
-    PIECE_VALUES = {
-        chess.PAWN: 100,
-        chess.KNIGHT: 320,
-        chess.BISHOP: 330,
-        chess.ROOK: 500,
-        chess.QUEEN: 900,
-        chess.KING: 20000,
-    }
-    
-    # Piece-Square Tables (positional bonuses/penalties for each square)
-    # These encourage pieces to occupy strong squares (e.g., pawns advance, knights centralize)
-    # Values are for white's perspective; flipped for black pieces
-    # Piece-Square Tables (values for white, flipped for black)
-    PAWN_TABLE = [
-        0,  0,  0,  0,  0,  0,  0,  0,
-        50, 50, 50, 50, 50, 50, 50, 50,
-        10, 10, 20, 30, 30, 20, 10, 10,
-        5,  5, 10, 27, 27, 10,  5,  5,
-        0,  0,  0, 25, 25,  0,  0,  0,
-        5, -5,-10,  0,  0,-10, -5,  5,
-        5, 10, 10,-25,-25, 10, 10,  5,
-        0,  0,  0,  0,  0,  0,  0,  0
-    ]
-    
-    KNIGHT_TABLE = [
-        -50,-40,-30,-30,-30,-30,-40,-50,
-        -40,-20,  0,  0,  0,  0,-20,-40,
-        -30,  0, 10, 15, 15, 10,  0,-30,
-        -30,  5, 15, 20, 20, 15,  5,-30,
-        -30,  0, 15, 20, 20, 15,  0,-30,
-        -30,  5, 10, 15, 15, 10,  5,-30,
-        -40,-20,  0,  5,  5,  0,-20,-40,
-        -50,-40,-30,-30,-30,-30,-40,-50
-    ]
-    
-    BISHOP_TABLE = [
-        -20,-10,-10,-10,-10,-10,-10,-20,
-        -10,  0,  0,  0,  0,  0,  0,-10,
-        -10,  0,  5, 10, 10,  5,  0,-10,
-        -10,  5,  5, 10, 10,  5,  5,-10,
-        -10,  0, 10, 10, 10, 10,  0,-10,
-        -10, 10, 10, 10, 10, 10, 10,-10,
-        -10,  5,  0,  0,  0,  0,  5,-10,
-        -20,-10,-10,-10,-10,-10,-10,-20
-    ]
-    
-    ROOK_TABLE = [
-        0,  0,  0,  0,  0,  0,  0,  0,
-        5, 10, 10, 10, 10, 10, 10,  5,
-        -5,  0,  0,  0,  0,  0,  0, -5,
-        -5,  0,  0,  0,  0,  0,  0, -5,
-        -5,  0,  0,  0,  0,  0,  0, -5,
-        -5,  0,  0,  0,  0,  0,  0, -5,
-        -5,  0,  0,  0,  0,  0,  0, -5,
-        0,  0,  0,  5,  5,  0,  0,  0
-    ]
-    
-    QUEEN_TABLE = [
-        -20,-10,-10, -5, -5,-10,-10,-20,
-        -10,  0,  0,  0,  0,  0,  0,-10,
-        -10,  0,  5,  5,  5,  5,  0,-10,
-        -5,  0,  5,  5,  5,  5,  0, -5,
-        0,  0,  5,  5,  5,  5,  0, -5,
-        -10,  5,  5,  5,  5,  5,  0,-10,
-        -10,  0,  5,  0,  0,  0,  0,-10,
-        -20,-10,-10, -5, -5,-10,-10,-20
-    ]
-    
+from simple_ai import SimpleAI
+from training_ai import TrainingAI
+from engine_manager import EngineManager
+from engine_adapter import EngineAdapter
     KING_MIDDLEGAME_TABLE = [
         -30,-40,-40,-50,-50,-40,-40,-30,
         -30,-40,-40,-50,-50,-40,-40,-30,
@@ -1230,210 +1039,7 @@ class SimpleAI:
         return score
 
 
-class TrainingAI:
-    """
-    Headless high-speed AI vs AI training mode.
-    Runs games in background without UI updates for faster learning.
-    """
     
-    def __init__(self, ai_instance: SimpleAI, depth: int = 3, batch_size: int = 100, export_interval: int | None = None, move_time_limit: float = 0.25):
-        """
-        Initialize training AI.
-        
-        Args:
-            ai_instance: The SimpleAI instance to train
-            depth: Search depth for both AIs
-        """
-        self.ai = ai_instance
-        self.depth = depth
-        self.running = False
-        self.games_played = 0
-        self.results = {'white': 0, 'black': 0, 'draw': 0}
-        self.thread = None
-        # Batching controls
-        self.batch_size = max(1, int(batch_size))
-        # If provided, export human-readable every N batches; None disables during training
-        self.export_interval = export_interval
-        self._batches_done = 0
-        self.move_time_limit = max(0.05, float(move_time_limit))
-        # Live metrics for UI polling
-        self.current_move_count = 0
-        # Console move counter throttle
-        self._last_move_print = 0.0
-    
-    def start(self):
-        """Start training in background thread."""
-        if self.running:
-            return
-        
-        self.running = True
-        # Configure AI for batched persistence
-        try:
-            self.ai.defer_persistence = True
-            self.ai.persist_every_n = self.batch_size
-            # Only export readable during training if export_interval is set
-            self.ai.export_readable_during_training = False if self.export_interval is None else True
-            # Reset pending counter
-            self.ai._pending_games = 0
-        except Exception:
-            pass
-        self.thread = threading.Thread(target=self._training_loop, daemon=True)
-        self.thread.start()
-        print(f"\n{'='*60}")
-        # Avoid emoji for wider terminal encoding compatibility
-        try:
-            enc = getattr(sys.stdout, 'encoding', '') or ''
-            if 'UTF' in enc.upper():
-                print("TRAINING AI MODE STARTED")  # Could add emoji if desired
-            else:
-                print("TRAINING AI MODE STARTED")
-        except Exception:
-            print("TRAINING AI MODE STARTED")
-        print(f"{'='*60}")
-        print(f"AI Depth: {self.depth}")
-        print(f"Learning enabled: {self.ai.use_learning}")
-        print(f"{'='*60}\n")
-        # Reset live metrics at start
-        try:
-            self.current_move_count = 0
-            self._last_move_print = 0.0
-        except Exception:
-            pass
-    
-    def stop(self):
-        """Stop training."""
-        if not self.running:
-            return
-        
-        self.running = False
-        if self.thread:
-            self.thread.join(timeout=2.0)
-        
-        # Flush any pending learning to disk and export readable once
-        try:
-            self.ai._save_learning_db()
-            try:
-                self.ai.export_readable_learning()
-            except Exception:
-                pass
-            # Restore default persistence behavior
-            self.ai.defer_persistence = False
-            self.ai.export_readable_during_training = False
-        except Exception:
-            pass
-
-        print(f"\n{'='*60}")
-        # ASCII-safe stop banner
-        print("TRAINING AI MODE STOPPED")
-        print(f"{'='*60}")
-        print(f"Total games played: {self.games_played}")
-        print(f"Results: White wins: {self.results['white']}, "
-              f"Black wins: {self.results['black']}, "
-              f"Draws: {self.results['draw']}")
-        if self.games_played > 0:
-            white_pct = (self.results['white'] / self.games_played) * 100
-            black_pct = (self.results['black'] / self.games_played) * 100
-            draw_pct = (self.results['draw'] / self.games_played) * 100
-            print(f"Win rates: White: {white_pct:.1f}%, Black: {black_pct:.1f}%, Draw: {draw_pct:.1f}%")
-        print(f"{'='*60}\n")
-        try:
-            self.current_move_count = 0
-        except Exception:
-            pass
-    
-    def _training_loop(self):
-        """Main training loop - runs games continuously."""
-        while self.running:
-            try:
-                # ASCII-only banner (removed rocket emoji for encoding compatibility)
-                print(f"Starting game #{self.games_played + 1}...")
-                board = chess.Board()
-                self.ai.game_log = []  # Reset game log
-                
-                # Play one complete game
-                move_count = 0
-                self.current_move_count = 0
-                max_moves = 300  # Prevent infinite games
-                
-                while not board.is_game_over() and move_count < max_moves and self.running:
-                    # Use time-limited search to guarantee steady progress
-                    move = self.ai.choose_move_iterative(board, time_limit=self.move_time_limit)
-                    
-                    if move is None:
-                        # Fallback: pick a random legal move to keep progress
-                        legal = list(board.legal_moves)
-                        if not legal:
-                            break
-                        move = random.choice(legal)
-                    
-                    board.push(move)
-                    move_count += 1
-                    # Update live move counter for UI
-                    self.current_move_count = move_count
-                    # Throttled move counter output to console
-                    try:
-                        now = time.time()
-                        if (move_count % 10 == 0) or (now - self._last_move_print >= 1.0):
-                            print(f"   Moves so far: {move_count}")
-                            self._last_move_print = now
-                    except Exception:
-                        pass
-                
-                # Game ended
-                if not self.running:
-                    break
-                
-                self.games_played += 1
-                
-                # Determine result
-                if board.is_checkmate():
-                    winner = 'black' if board.turn == chess.WHITE else 'white'
-                    result_text = f"{'White' if winner == 'white' else 'Black'} wins by checkmate"
-                elif board.is_stalemate():
-                    winner = 'draw'
-                    result_text = "Draw by stalemate"
-                elif board.is_insufficient_material():
-                    winner = 'draw'
-                    result_text = "Draw by insufficient material"
-                elif move_count >= max_moves:
-                    winner = 'draw'
-                    result_text = "Draw by move limit"
-                else:
-                    winner = 'draw'
-                    result_text = "Draw"
-                
-                # Update results
-                self.results[winner] += 1
-                
-                # Finalize learning
-                self.ai.finalize_game(winner)
-                
-                # Print game summary
-                print(f"Game #{self.games_played} completed: {result_text} ({move_count} moves)")
-
-                # Handle export interval if configured: export every N batches
-                if self.export_interval is not None and self.ai._pending_games == 0:
-                    # A batch was just flushed; increment batch counter
-                    self._batches_done += 1
-                    if (self._batches_done % max(1, self.export_interval)) == 0:
-                        try:
-                            self.ai.export_readable_learning()
-                            print("Exported readable learning snapshot.")
-                        except Exception:
-                            pass
-                
-                # Print periodic statistics
-                if self.games_played % 10 == 0:
-                    print(f"\n{'-'*60}")
-                    print(f"Training Statistics (after {self.games_played} games):")
-                    print(f"   White: {self.results['white']} wins ({(self.results['white']/self.games_played)*100:.1f}%)")
-                    print(f"   Black: {self.results['black']} wins ({(self.results['black']/self.games_played)*100:.1f}%)")
-                    print(f"   Draws: {self.results['draw']} ({(self.results['draw']/self.games_played)*100:.1f}%)")
-                    print(f"{'-'*60}\n")
-                
-            except Exception as e:
-                print(f"Error in training loop: {e}")
-                time.sleep(0.1)
 
 
 class GameController:
@@ -1458,7 +1064,8 @@ class GameController:
         ai_depth = self.config.get('ai_depth', 3) if self.config else 3
         self.ai = SimpleAI(depth=ai_depth)
         
-        self.engine_manager = EngineManager(os.path.dirname(__file__))
+        # Initialize engine adapter (wraps EngineManager)
+        self.engine_adapter = EngineAdapter(EngineManager(os.path.dirname(__file__)))
         self.engine_enabled = False
         self.engine = None
         self.piece_images = None
@@ -1613,6 +1220,9 @@ class GameController:
                               length=180, sliderlength=20)
         depth_scale.pack(padx=2)
         self.depth_scale = depth_scale
+        # Metrics display
+        self.metrics_var = tk.StringVar(value='Metrics: (none)')
+        tk.Label(scrollable_frame, textvariable=self.metrics_var, font=('Arial', 8), fg='#555').pack(pady=2)
         
         # Game mode selector
         mode_frame = tk.LabelFrame(scrollable_frame, text='Game Mode', font=('Arial', 9, 'bold'))
@@ -1861,6 +1471,24 @@ class GameController:
         self.engine_toggle = tk.Button(engine_frame, text='Use Engine: Off', command=self.toggle_engine, font=('Arial', 8))
         self.engine_toggle.pack(fill='x', pady=1, padx=2)
 
+        # Batch PGN Converter frame
+        converter_frame = tk.LabelFrame(scrollable_frame, text='Batch PGN Converter', font=('Arial', 9, 'bold'))
+        converter_frame.pack(fill='x', pady=2, padx=2)
+        self.converter_format_var = tk.StringVar(value='json')
+        self.converter_input_dir_var = tk.StringVar(value='')
+        self.converter_output_dir_var = tk.StringVar(value='')
+        self.converter_status_var = tk.StringVar(value='Idle')
+        tk.Label(converter_frame, text='Format:', font=('Arial', 8)).pack(anchor='w', padx=2)
+        fmt_menu = tk.OptionMenu(converter_frame, self.converter_format_var, 'json', 'summary', 'csv', 'minimal')
+        fmt_menu.config(font=('Arial', 8))
+        fmt_menu.pack(fill='x', padx=2)
+        dir_btn_row = tk.Frame(converter_frame)
+        dir_btn_row.pack(fill='x', padx=2, pady=1)
+        tk.Button(dir_btn_row, text='Input Dir…', command=self.open_batch_converter_input_dir, font=('Arial', 8)).pack(side='left', padx=1)
+        tk.Button(dir_btn_row, text='Output Dir…', command=self.open_batch_converter_output_dir, font=('Arial', 8)).pack(side='left', padx=1)
+        tk.Button(converter_frame, text='Run Conversion', command=self.start_batch_conversion, font=('Arial', 8, 'bold')).pack(fill='x', padx=2, pady=3)
+        tk.Label(converter_frame, textvariable=self.converter_status_var, font=('Arial', 8), fg='#333').pack(anchor='w', padx=2, pady=1)
+
         self.load_piece_images()
         self.load_overlay_icons()
 
@@ -1990,11 +1618,10 @@ class GameController:
         session_id = self._ai_session_id
         move = None
         try:
-            if self.engine_enabled and getattr(self.engine_manager, 'engine', None) is not None:
+            if self.engine_enabled and self.engine_adapter.is_running():
                 try:
                     tm = 0.05 * depth
-                    result = self.engine_manager.play(self.board, chess.engine.Limit(time=tm))
-                    move = result.move
+                    move = self.engine_adapter.play_move(self.board, tm)
                     # Engine move: no learning-based explanation
                     self.ai_last_explanation = ''
                 except Exception:
@@ -2065,6 +1692,18 @@ class GameController:
             self.ai_thinking = False  # Unlock UI after AI move
             self.master.config(cursor='')  # Reset cursor to default
             self.update_board()
+            # Update metrics label
+            try:
+                if hasattr(self, 'metrics_var') and hasattr(self.ai, 'last_move_metrics'):
+                    m = self.ai.last_move_metrics or {}
+                    if m.get('move'):
+                        txt = (f"Metrics: move={m.get('move')} depth={m.get('depth')} nodes={m.get('nodes')} "
+                               f"branch={m.get('branching')} time={m.get('time'):.3f}s src={m.get('source')}")
+                    else:
+                        txt = 'Metrics: (engine move)'
+                    self.metrics_var.set(txt)
+            except Exception:
+                pass
             # Chain next AI move if in AI vs AI mode AND game has started
             if self.play_mode == 'ai_vs_ai' and not self.board.is_game_over() and self.game_started:
                 current_depth = max(1, self.depth_var.get())
@@ -2795,7 +2434,7 @@ class GameController:
             if not path:
                 messagebox.showerror('Engine', 'No engine path provided')
                 return
-            ok = self.engine_manager.start(path)
+            ok = self.engine_adapter.start(path)
             if ok:
                 self.engine_enabled = True
                 self.engine_toggle.configure(text='Use Engine: On')
@@ -2804,16 +2443,16 @@ class GameController:
                 self.engine_enabled = False
         else:
             try:
-                self.engine_manager.stop()
+                self.engine_adapter.stop()
             finally:
                 self.engine_enabled = False
                 self.engine_toggle.configure(text='Use Engine: Off')
 
     def on_close(self):
         try:
-            if getattr(self.engine_manager, 'engine', None):
+            if self.engine_adapter.is_running():
                 try:
-                    self.engine_manager.stop()
+                    self.engine_adapter.stop()
                 except Exception:
                     pass
         finally:
@@ -3041,7 +2680,7 @@ class GameController:
             messagebox.showerror('Error', f'Failed to load PGN: {e}')
 
     def detect_engine(self):
-        path = self.engine_manager.detect()
+        path = self.engine_adapter.detect()
         if path:
             var = getattr(self, 'engine_path_var', None)
             if var is not None:
@@ -3058,7 +2697,7 @@ class GameController:
         proceed = messagebox.askyesno('Download Stockfish', 'Download Stockfish release from GitHub releases?\nProceed?')
         if not proceed:
             return
-        found = self.engine_manager.download_stockfish(prefer_platform=prefer, token=token)
+        found = self.engine_adapter.download_stockfish(prefer_platform=prefer, token=token)
         if not found:
             messagebox.showerror('Download failed', 'Failed to download or extract Stockfish — check network or token.')
             return
@@ -3090,7 +2729,7 @@ class GameController:
         prefer = platform_var.get() if platform_var is not None else 'auto'
         gh_token = getattr(self, 'github_token', None)
         token = gh_token.get().strip() if gh_token is not None else ''
-        ok, msg, found_path = self.engine_manager.verify_engine(path, retries=retries, timeout=timeout, auto_download=auto_dl, prefer_platform=prefer, backoff=strategy, max_wait=backoff, token=token)
+        ok, msg, found_path = self.engine_adapter.verify(path, retries=retries, timeout=timeout, auto_download=auto_dl, prefer_platform=prefer, backoff=strategy, max_wait=backoff, token=token)
         if ok:
             if found_path:
                 var = getattr(self, 'engine_path_var', None)
@@ -3105,3 +2744,49 @@ class GameController:
             if vlog is not None:
                 vlog.insert(tk.END, f'ERR: {msg}')
             messagebox.showerror('Verify failed', msg)
+
+    # --- Batch PGN Converter UI callbacks ---
+    def open_batch_converter_input_dir(self):
+        try:
+            path = filedialog.askdirectory(title='Select PGN input directory')
+            if path:
+                self.converter_input_dir_var.set(path)
+        except Exception:
+            pass
+
+    def open_batch_converter_output_dir(self):
+        try:
+            path = filedialog.askdirectory(title='Select output directory')
+            if path:
+                self.converter_output_dir_var.set(path)
+        except Exception:
+            pass
+
+    def start_batch_conversion(self):
+        try:
+            in_dir = self.converter_input_dir_var.get().strip()
+            out_dir = self.converter_output_dir_var.get().strip()
+            fmt = self.converter_format_var.get().strip()
+            if not in_dir or not os.path.isdir(in_dir):
+                messagebox.showerror('Batch Convert', 'Select a valid input directory containing .pgn files.')
+                return
+            if not out_dir:
+                out_dir = os.path.join(in_dir, 'converted')
+                self.converter_output_dir_var.set(out_dir)
+            def worker():
+                try:
+                    self.converter_status_var.set('Running...')
+                    import importlib.util
+                    conv_path = os.path.join(os.path.dirname(__file__), 'tools', 'batch_pgn_converter.py')
+                    spec = importlib.util.spec_from_file_location('batch_pgn_converter', conv_path)
+                    mod = importlib.util.module_from_spec(spec)
+                    assert spec.loader is not None
+                    spec.loader.exec_module(mod)
+                    report = mod.batch_convert(in_dir, out_dir, fmt=fmt, force=False, aggregate_csv=True)
+                    summary = f"{report.get('ok',0)} ok, {report.get('skipped',0)} skipped, {report.get('error',0)} errors"
+                    self.converter_status_var.set(f'Done: {summary}')
+                except Exception as e:
+                    self.converter_status_var.set(f'Error: {e}')
+            threading.Thread(target=worker, daemon=True).start()
+        except Exception:
+            pass
