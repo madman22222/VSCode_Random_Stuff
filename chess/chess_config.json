@@ -22,5 +22,6 @@
     "total_moves": 0
   },
   "play_mode": "training_ai",
-  "auto_save_pgn": true
+  "auto_save_pgn": true,
+  "gui_move_time_ms": 500
 }

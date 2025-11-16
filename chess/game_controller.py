@@ -1632,6 +1632,15 @@ class GameController:
         self.ai_delay_var = tk.IntVar(value=200)
         tk.Scale(pace_frame, from_=0, to=1000, orient='horizontal', variable=self.ai_delay_var, length=120, sliderlength=14).pack(side='left', padx=4)
 
+        # Per-move time for GUI AI (separate from Training)
+        pace2_frame = tk.Frame(mode_frame)
+        pace2_frame.pack(fill='x', padx=8, pady=2)
+        tk.Label(pace2_frame, text='GUI AI Per-move time (ms):', font=('Arial', 8)).pack(side='left')
+        _info(pace2_frame, 'Time cap per move for built-in AI in Player vs AI and AI vs AI (UI). Training AI uses its own Per-move time setting below.').pack(side='left', padx=4)
+        self.gui_move_time_var = tk.IntVar(value=(self.config.get('gui_move_time_ms', 250) if self.config else 250))
+        gui_move_scale = tk.Scale(pace2_frame, from_=50, to=2000, orient='horizontal', variable=self.gui_move_time_var, length=120, sliderlength=14, command=lambda _=None: self.on_gui_move_time_change())
+        gui_move_scale.pack(side='left', padx=4)
+
         # General options
         options_frame = tk.LabelFrame(scrollable_frame, text='Options', font=('Arial', 9, 'bold'))
         options_frame.pack(fill='x', pady=2, padx=2)
@@ -1979,10 +1988,17 @@ class GameController:
                 self.ai.depth = depth
                 # Compute explanation using learning before pushing
                 fen_key = self.board.fen().split(' ')[0]
-                # Use time-limited search in AI vs AI to avoid long stalls at higher depths
-                if self.play_mode == 'ai_vs_ai':
+                # Use time-limited search in GUI modes to avoid long stalls at higher depths
+                use_time_cap = self.play_mode in ('ai_vs_ai', 'player_vs_ai')
+                if use_time_cap:
                     try:
-                        tl = (self.training_move_time_var.get() / 1000.0) if hasattr(self, 'training_move_time_var') else 0.25
+                        # Prefer GUI-specific per-move time; fall back to training slider, then default
+                        if hasattr(self, 'gui_move_time_var'):
+                            tl = float(int(self.gui_move_time_var.get())) / 1000.0
+                        elif hasattr(self, 'training_move_time_var'):
+                            tl = float(int(self.training_move_time_var.get())) / 1000.0
+                        else:
+                            tl = 0.25
                         tl = max(0.05, float(tl))
                     except Exception:
                         tl = 0.25
@@ -2409,6 +2425,13 @@ class GameController:
                 self.start_pause_button.config(text='\u23f8 Pause Game', bg='#ff9800')
             else:
                 self.start_pause_button.config(text='\u25b6 Start Game', bg='#4CAF50')
+
+    def on_gui_move_time_change(self) -> None:
+        try:
+            if self.config and hasattr(self, 'gui_move_time_var'):
+                self.config.set('gui_move_time_ms', int(self.gui_move_time_var.get()))
+        except Exception:
+            pass
     
     def toggle_sound(self) -> None:
         """Toggle sound effects on/off."""
