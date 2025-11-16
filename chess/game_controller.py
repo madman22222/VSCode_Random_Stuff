@@ -1141,7 +1141,10 @@ class SimpleAI:
             pass
 
     def choose_move_iterative(self, board: chess.Board, time_limit: float = 5.0) -> 'Optional[chess.Move]':
-        """Choose best move using iterative deepening with time limit."""
+        """Choose best move using iterative deepening with time limit.
+
+        Dynamically adapts maximum depth based on available time and branching.
+        """
         import time
         
         # Check opening book first
@@ -1156,8 +1159,9 @@ class SimpleAI:
         start_time = time.time()
         best_move = None
         
-        # Iteratively deepen from 1 to max depth
-        for depth in range(1, 11):  # Up to depth 10
+        # Iteratively deepen until time budget exhausted; cap at configured depth or 10
+        max_target = min(getattr(self, 'depth', 3), 10)
+        for depth in range(1, max_target + 1):
             if time.time() - start_time >= time_limit:
                 break
             
@@ -1405,7 +1409,7 @@ class TrainingAI:
                 self.ai.finalize_game(winner)
                 
                 # Print game summary
-                print(f"🎮 Game #{self.games_played} completed: {result_text} ({move_count} moves)")
+                print(f"Game #{self.games_played} completed: {result_text} ({move_count} moves)")
 
                 # Handle export interval if configured: export every N batches
                 if self.export_interval is not None and self.ai._pending_games == 0:
@@ -1414,18 +1418,18 @@ class TrainingAI:
                     if (self._batches_done % max(1, self.export_interval)) == 0:
                         try:
                             self.ai.export_readable_learning()
-                            print("📤 Exported readable learning snapshot.")
+                            print("Exported readable learning snapshot.")
                         except Exception:
                             pass
                 
                 # Print periodic statistics
                 if self.games_played % 10 == 0:
-                    print(f"\n{'─'*60}")
-                    print(f"📊 Training Statistics (after {self.games_played} games):")
+                    print(f"\n{'-'*60}")
+                    print(f"Training Statistics (after {self.games_played} games):")
                     print(f"   White: {self.results['white']} wins ({(self.results['white']/self.games_played)*100:.1f}%)")
                     print(f"   Black: {self.results['black']} wins ({(self.results['black']/self.games_played)*100:.1f}%)")
                     print(f"   Draws: {self.results['draw']} ({(self.results['draw']/self.games_played)*100:.1f}%)")
-                    print(f"{'─'*60}\n")
+                    print(f"{'-'*60}\n")
                 
             except Exception as e:
                 print(f"Error in training loop: {e}")
@@ -1964,7 +1968,13 @@ class GameController:
                     self.selected = square
                     self.update_board()
 
-    def run_ai_move(self, depth: int):
+    def run_ai_move(self, depth: int | None = None):
+        # Allow tests or callers to omit depth; fall back to current depth var or AI depth
+        if depth is None:
+            try:
+                depth = max(1, int(self.depth_var.get()))
+            except Exception:
+                depth = getattr(self.ai, 'depth', 1)
         # Optional pacing so the UI can render between AI moves (especially in AI vs AI)
         try:
             if self.play_mode == 'ai_vs_ai':
@@ -2036,6 +2046,18 @@ class GameController:
         # Schedule GUI update on main thread only if still current session
         if session_id == self._ai_session_id:
             self.master.after(0, self._finish_ai_move)
+
+    def _launch_ai_thread(self, depth: int | None = None) -> None:
+        """Central helper to start an AI move thread if not already thinking."""
+        if self.ai_thinking:
+            return
+        self.ai_thinking = True
+        self.status.config(text='AI is thinking...')
+        try:
+            self.master.config(cursor='watch')
+        except Exception:
+            pass
+        threading.Thread(target=self.run_ai_move, args=(depth,), daemon=True).start()
     
     def _finish_ai_move(self):
         """Called on main thread after AI move completes."""
@@ -2045,12 +2067,8 @@ class GameController:
             self.update_board()
             # Chain next AI move if in AI vs AI mode AND game has started
             if self.play_mode == 'ai_vs_ai' and not self.board.is_game_over() and self.game_started:
-                # Brief delay to keep UI responsive
                 current_depth = max(1, self.depth_var.get())
-                self.ai_thinking = True
-                self.status.config(text='AI is thinking...')
-                self.master.config(cursor='watch')
-                threading.Thread(target=self.run_ai_move, args=(current_depth,), daemon=True).start()
+                self._launch_ai_thread(current_depth)
         except Exception as e:
             print(f"Error finishing AI move: {e}")
             self.ai_thinking = False
@@ -2289,6 +2307,8 @@ class GameController:
         self.play_mode = self.mode_var.get()
         if self.config:
             self.config.set('play_mode', self.play_mode)
+        # Invalidate in-flight AI threads when mode changes
+        self._ai_session_id += 1
         
         if self.play_mode == 'ai_vs_ai':
             mode_text = "AI vs AI"
@@ -2324,14 +2344,14 @@ class GameController:
                 self.ai_thinking = True
                 self.status.config(text='AI is thinking...')
                 self.master.config(cursor='watch')
-                threading.Thread(target=self.run_ai_move, args=(current_depth,), daemon=True).start()
+                self._launch_ai_thread(current_depth)
             elif self.play_mode == 'player_vs_ai' and self.board.turn == chess.BLACK:
                 # If it's black's turn and black is AI, start AI move
                 current_depth = max(1, self.depth_var.get())
                 self.ai_thinking = True
                 self.status.config(text='AI is thinking...')
                 self.master.config(cursor='watch')
-                threading.Thread(target=self.run_ai_move, args=(current_depth,), daemon=True).start()
+                self._launch_ai_thread(current_depth)
             elif self.play_mode == 'training_ai':
                 # Start training AI
                 self.start_training_ai()
