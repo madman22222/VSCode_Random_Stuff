@@ -5,11 +5,9 @@ from __future__ import annotations
 
 import chess  # type: ignore
 import chess.pgn  # type: ignore
-import random
 import time
 import os
 from typing import Optional
-import time
 
 try:
     from logger import info, debug, warn, error  # type: ignore
@@ -20,7 +18,7 @@ except Exception:
     def warn(*a, **k): pass
     def error(*a, **k): pass
 
-# Original class definition copied verbatim (except removed surrounding comments)
+
 class SimpleAI:
     """
     Advanced Chess AI with Learning Capability
@@ -38,7 +36,16 @@ class SimpleAI:
     PAWN_TABLE = [0,0,0,0,0,0,0,0,50,50,50,50,50,50,50,50,10,10,20,30,30,20,10,10,5,5,10,27,27,10,5,5,0,0,0,25,25,0,0,0,5,-5,-10,0,0,-10,-5,5,5,10,10,-25,-25,10,10,5,0,0,0,0,0,0,0,0]
     KNIGHT_TABLE = [-50,-40,-30,-30,-30,-30,-40,-50,-40,-20,0,0,0,0,-20,-40,-30,0,10,15,15,10,0,-30,-30,5,15,20,20,15,5,-30,-30,0,15,20,20,15,0,-30,-30,5,10,15,15,10,5,-30,-40,-20,0,5,5,0,-20,-40,-50,-40,-30,-30,-30,-30,-40,-50]
     BISHOP_TABLE = [-20,-10,-10,-10,-10,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,10,10,5,0,-10,-10,5,5,10,10,5,5,-10,-10,0,10,10,10,10,0,-10,-10,10,10,10,10,10,10,-10,-10,5,0,0,0,0,5,-10,-20,-10,-10,-10,-10,-10,-10,-20]
-    ROOK_TABLE = [0,0,0,0,0,0,0,0,5,10,10,10,10,10,10,5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,0,0,0,5,5,0,0,0]
+    ROOK_TABLE = [
+        0,0,0,0,0,0,0,0,
+        5,10,10,10,10,10,10,5,
+        -5,0,0,0,0,0,0,-5,
+        -5,0,0,0,0,0,0,-5,
+        -5,0,0,0,0,0,0,-5,
+        -5,0,0,0,0,0,0,-5,
+        -5,0,0,0,0,0,0,-5,
+        0,0,0,5,5,0,0,0,
+    ]
     QUEEN_TABLE = [-20,-10,-10,-5,-5,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,5,5,5,0,-10,-5,0,5,5,5,5,0,-5,0,0,5,5,5,5,0,-5,-10,5,5,5,5,5,0,-10,-10,0,5,0,0,0,0,-10,-20,-10,-10,-5,-5,-10,-10,-20]
     KING_MIDDLEGAME_TABLE = [-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-20,-30,-30,-40,-40,-30,-30,-20,-10,-20,-20,-20,-20,-20,-20,-10,20,20,0,0,0,0,20,20,20,30,10,0,0,10,30,20]
     KING_ENDGAME_TABLE = [-50,-40,-30,-20,-20,-30,-40,-50,-30,-20,-10,0,0,-10,-20,-30,-30,-10,20,30,30,20,-10,-30,-30,-10,30,40,40,30,-10,-30,-30,-10,30,40,40,30,-10,-30,-30,-10,20,30,30,20,-10,-30,-30,-30,0,0,0,0,-30,-30,-50,-30,-30,-30,-30,-30,-30,-50]
@@ -49,7 +56,7 @@ class SimpleAI:
         "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1": ["g8f6","d7d5","e7e6"],
         "rnbqkb1r/pppppppp/5n2/8/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 1 2": ["c2c4","g1f3"],
     }
-    def __init__(self, depth=3):
+    def __init__(self, depth=3, learning_path=None):
         self.depth = depth
         self.nodes_searched = 0
         self.last_move_metrics = {}
@@ -58,7 +65,7 @@ class SimpleAI:
         self.history = {}
         self.learning_db = {}
         self.game_log = []
-        self._learning_path = os.path.join(os.path.dirname(__file__), 'ai_learn.json')
+        self._learning_path = os.fspath(learning_path) if learning_path is not None else os.path.join(os.path.dirname(__file__), 'ai_learn.json')
         self._learning_path_gz = self._learning_path + '.gz'
         self._load_learning_db()
         self.use_learning = True
@@ -92,31 +99,34 @@ class SimpleAI:
         except Exception:
             self.learning_db = {}
     def _save_learning_db(self) -> None:
+        import json
+        import gzip
+        import tempfile
+        wrapper = {
+            'meta': {'version': self.learning_version,
+                     'saved': time.strftime('%Y-%m-%d %H:%M:%S'),
+                     'count': len(self.learning_db)},
+            'data': self.learning_db,
+        }
+        compressed = bool(self.compress_learning)
+        target = self._learning_path_gz if compressed else self._learning_path
+        directory = os.path.dirname(os.path.abspath(target))
+        os.makedirs(directory, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(dir=directory, suffix='.tmp')
+        os.close(fd)
         try:
-            import json, gzip, os
-            # Embed meta wrapper
-            wrapper = {
-                'meta': {
-                    'version': self.learning_version,
-                    'saved': time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'count': len(self.learning_db)
-                },
-                'data': self.learning_db
-            }
-            if getattr(self, 'compress_learning', False):
-                with gzip.open(self._learning_path_gz, 'wt', encoding='utf-8') as f:
-                    json.dump(wrapper, f, separators=(',', ':'), ensure_ascii=False)
-                try:
-                    if os.path.exists(self._learning_path):
-                        os.remove(self._learning_path)
-                except Exception:
-                    pass
-            else:
-                with open(self._learning_path, 'w', encoding='utf-8') as f:
-                    json.dump(wrapper, f, separators=(',', ':'), ensure_ascii=False)
-            debug(f"Saved learning DB ({len(self.learning_db)} entries)")
-        except Exception:
-            pass
+            opener = gzip.open if compressed else open
+            with opener(temporary, 'wt', encoding='utf-8') as stream:
+                json.dump(wrapper, stream, separators=(',', ':'))
+            os.replace(temporary, target)
+            # Keep only the active format, so a stale gzip cannot override JSON.
+            other = self._learning_path if compressed else self._learning_path_gz
+            if os.path.exists(other):
+                os.remove(other)
+        finally:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+
     def _maybe_prune_learning(self) -> None:
         try:
             now = time.time()
@@ -237,7 +247,7 @@ class SimpleAI:
         elif total_material <= 6: return 2
         else: return 1
     def get_piece_square_value(self, piece: chess.Piece, square: int, phase: int) -> int:
-        sq = square if piece.color == chess.WHITE else chess.square_mirror(square)
+        sq = chess.square_mirror(square) if piece.color == chess.WHITE else square
         if piece.piece_type == chess.PAWN: return self.PAWN_TABLE[sq]
         elif piece.piece_type == chess.KNIGHT: return self.KNIGHT_TABLE[sq]
         elif piece.piece_type == chess.BISHOP: return self.BISHOP_TABLE[sq]
@@ -246,7 +256,7 @@ class SimpleAI:
         elif piece.piece_type == chess.KING: return self.KING_ENDGAME_TABLE[sq] if phase==2 else self.KING_MIDDLEGAME_TABLE[sq]
         return 0
     def evaluate(self, board: chess.Board) -> int:
-        if board.is_checkmate(): return -20000 if board.turn==chess.WHITE else 20000
+        if board.is_checkmate(): return -9999999
         if board.is_stalemate() or board.is_insufficient_material(): return 0
         phase = self.game_phase(board); score = 0
         for square in chess.SQUARES:
@@ -322,132 +332,70 @@ class SimpleAI:
                     if color==chess.WHITE and fp_rank < pawn_rank: return True
                     if color==chess.BLACK and fp_rank > pawn_rank: return True
         return False
-    def quiescence(self, board: chess.Board, alpha: int, beta: int) -> int:
-        try:
-            self.nodes_searched += 1
-        except Exception:
-            pass
-        stand_pat = self.evaluate(board)
-        if stand_pat >= beta: return beta
-        if alpha < stand_pat: alpha = stand_pat
-        capture_moves = [m for m in board.legal_moves if board.is_capture(m)]
-        capture_moves.sort(key=lambda m: self._move_score(board, m), reverse=True)
-        for move in capture_moves:
-            board.push(move); score = -self.quiescence(board, -beta, -alpha); board.pop()
-            if score >= beta: return beta
-            if score > alpha: alpha = score
-        return alpha
-    def negamax(self, board: chess.Board, depth: int, alpha: int, beta: int) -> int:
-        try:
-            self.nodes_searched += 1
-        except Exception:
-            pass
-        fen = board.fen()
-        if fen in self.transposition_table:
-            t_score, t_depth, t_flag, _ = self.transposition_table[fen]
-            if t_depth >= depth:
-                if t_flag == 'EXACT': return t_score
-                if t_flag == 'LOWER' and t_score >= beta: return t_score
-                if t_flag == 'UPPER' and t_score <= alpha: return t_score
+    def _check_deadline(self):
+        deadline = getattr(self, '_deadline', None)
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError('Search time budget reached')
+
+    def quiescence(self, board, alpha, beta, ply=0):
+        self._check_deadline()
+        self.nodes_searched += 1
         if board.is_game_over():
-            score = -9999999 if board.is_checkmate() else 0
-            self.transposition_table[fen] = (score, depth, 'EXACT', None); return score
-        if depth == 0:
-            score = self.quiescence(board, alpha, beta); self.transposition_table[fen] = (score, depth, 'EXACT', None); return score
-        max_score = -9999999; best_move = None; moves = list(board.legal_moves); moves = self._order_moves(board, moves, depth); orig_alpha = alpha
-        for idx, move in enumerate(moves):
-            pv = (idx == 0)
-            try:
-                is_capture = board.is_capture(move); gives_check = board.gives_check(move)
-            except Exception:
-                is_capture = False; gives_check = False
+            return -9999999 if board.is_checkmate() else 0
+        if ply >= 16:
+            return self.evaluate(board)
+        in_check = board.is_check()
+        if not in_check:
+            stand_pat = self.evaluate(board)
+            if stand_pat >= beta:
+                return beta
+            alpha = max(alpha, stand_pat)
+        moves = [m for m in board.legal_moves
+                 if in_check or board.is_capture(m) or m.promotion]
+        moves.sort(key=lambda m: self._move_score(board, m), reverse=True)
+        for move in moves:
             board.push(move)
-            if pv:
-                score = -self.negamax(board, depth-1, -beta, -alpha)
-            else:
-                reduction = 0
-                if depth >= 3 and not is_capture and not gives_check and move.promotion is None and idx >= 4:
-                    reduction = 1
-                d2 = max(1, depth-1-reduction)
-                score = -self.negamax(board, d2, -(alpha+1), -alpha)
-                if score > alpha:
-                    score = -self.negamax(board, depth-1, -beta, -alpha)
-            board.pop()
-            if score > max_score: max_score = score; best_move = move
+            try:
+                score = -self.quiescence(board, -beta, -alpha, ply + 1)
+            finally:
+                board.pop()
+            if score >= beta:
+                return beta
+            alpha = max(alpha, score)
+        return alpha
+
+    def negamax(self, board, depth, alpha, beta):
+        self._check_deadline()
+        self.nodes_searched += 1
+        if board.is_game_over(claim_draw=True):
+            return -9999999 if board.is_checkmate() else 0
+        if depth <= 0:
+            return self.quiescence(board, alpha, beta)
+        best_score = -10000000
+        best_move = None
+        original_alpha = alpha
+        for move in self._order_moves(board, list(board.legal_moves), depth):
+            board.push(move)
+            try:
+                score = -self.negamax(board, depth - 1, -beta, -alpha)
+            finally:
+                board.pop()
+            if score > best_score:
+                best_score, best_move = score, move
             alpha = max(alpha, score)
             if alpha >= beta:
-                self._store_killer(depth, move); self._bump_history(move, depth); break
-        flag = 'EXACT'
-        if max_score <= orig_alpha: flag = 'UPPER'
-        elif max_score >= beta: flag = 'LOWER'
-        self.transposition_table[fen] = (max_score, depth, flag, best_move.uci() if best_move else None)
-        return max_score
-    def choose_move(self, board: chess.Board) -> Optional[chess.Move]:
-        position_fen = board.fen().split(' ')[0]
-        if position_fen in self.OPENING_BOOK:
-            book_moves = self.OPENING_BOOK[position_fen]
-            legal_book_moves = [mv for mv in book_moves if mv in [m.uci() for m in board.legal_moves]]
-            if legal_book_moves:
-                chosen = chess.Move.from_uci(random.choice(legal_book_moves))
-                self.last_move_metrics = {
-                    'move': chosen.uci(),
-                    'depth': 0,
-                    'nodes': 0,
-                    'branching': len(list(board.legal_moves)),
-                    'time': 0.0,
-                    'source': 'book'
-                }
-                return chosen
-        start_time = time.time(); self.nodes_searched = 0
-        best_move = None; prev_score = 0; root_branching = len(list(board.legal_moves))
-        for d in range(1, max(1, self.depth)+1):
-            window = 30 + d*10
-            alpha = max(-9999999, prev_score - window); beta = min(9999999, prev_score + window)
-            move_d, score_d = self._search_root(board, d, alpha, beta)
-            if move_d is not None and score_d <= alpha:
-                move_d, score_d = self._search_root(board, d, -9999999, beta)
-            elif move_d is not None and score_d >= beta:
-                move_d, score_d = self._search_root(board, d, alpha, 9999999)
-            if move_d is not None:
-                best_move, prev_score = move_d, score_d
-        if best_move is not None:
-            try:
-                fen_key = board.fen().split(' ')[0]; self._log_choice(fen_key, best_move.uci(), board.turn)
-            except Exception: pass
-            elapsed = time.time() - start_time
-            self.last_move_metrics = {
-                'move': best_move.uci(),
-                'depth': self.depth,
-                'nodes': self.nodes_searched,
-                'branching': root_branching,
-                'time': elapsed,
-                'source': 'aspiration'
-            }
-            try:
-                info(f"AI metrics: move={best_move.uci()} depth={self.depth} nodes={self.nodes_searched} branching={root_branching} time={elapsed:.3f}s")
-            except Exception:
-                pass
-        return best_move
-    def _search_root(self, board: chess.Board, depth: int, alpha: int, beta: int):
-        best_move = None; max_score = -9999999; fen = board.fen(); moves = list(board.legal_moves); moves = self._order_moves(board, moves, depth); orig_alpha = alpha
-        for idx, move in enumerate(moves):
-            board.push(move)
-            if idx == 0:
-                score = -self.negamax(board, depth-1, -beta, -alpha)
-            else:
-                score = -self.negamax(board, depth-1, -(alpha+1), -alpha)
-                if score > alpha:
-                    score = -self.negamax(board, depth-1, -beta, -alpha)
-            board.pop()
-            if score > max_score: max_score = score; best_move = move
-            alpha = max(alpha, score)
-            if alpha >= beta:
-                self._store_killer(depth, move); self._bump_history(move, depth); break
-        flag = 'EXACT'
-        if max_score <= orig_alpha: flag = 'UPPER'
-        elif max_score >= beta: flag = 'LOWER'
-        self.transposition_table[fen] = (max_score, depth, flag, best_move.uci() if best_move else None)
-        return best_move, max_score
+                self._store_killer(depth, move)
+                self._bump_history(move, depth)
+                break
+        flag = 'UPPER' if best_score <= original_alpha else (
+            'LOWER' if best_score >= beta else 'EXACT')
+        self.transposition_table[board.fen()] = (
+            best_score, depth, flag, best_move.uci() if best_move else None)
+        return best_score
+
+    def choose_move(self, board: chess.Board):
+        return self.choose_move_iterative(board, time_limit=5.0)
+
     def _order_moves(self, board: chess.Board, moves: list[chess.Move], depth: int) -> list[chess.Move]:
         def score_move(m: chess.Move) -> int:
             s = self._move_score(board, m) + self.history.get(m.uci(),0)
@@ -475,49 +423,44 @@ class SimpleAI:
         try:
             u = move.uci(); self.history[u] = self.history.get(u,0) + depth*depth
         except Exception: pass
-    def choose_move_iterative(self, board: chess.Board, time_limit: float = 5.0) -> Optional[chess.Move]:
-        position_fen = board.fen().split(' ')[0]
-        if position_fen in self.OPENING_BOOK:
-            book_moves = self.OPENING_BOOK[position_fen]
-            legal_book_moves = [mv for mv in book_moves if mv in [m.uci() for m in board.legal_moves]]
-            if legal_book_moves:
-                chosen = chess.Move.from_uci(random.choice(legal_book_moves))
-                self.last_move_metrics = {
-                    'move': chosen.uci(),
-                    'depth': 0,
-                    'nodes': 0,
-                    'branching': len(list(board.legal_moves)),
-                    'time': 0.0,
-                    'source': 'book'
-                }
-                return chosen
-        start_time = time.time(); self.nodes_searched = 0; best_move = None; max_target = min(getattr(self,'depth',3), 10)
-        root_branching = len(list(board.legal_moves))
-        for depth in range(1, max_target+1):
-            if time.time() - start_time >= time_limit: break
-            self.depth = depth; current_best = None; best_score = -9999999; alpha = -9999999; beta = 9999999
-            moves = list(board.legal_moves); moves.sort(key=lambda m: self._move_score(board, m), reverse=True)
-            for move in moves:
-                if time.time() - start_time >= time_limit: break
-                board.push(move); score = -self.negamax(board, depth-1, -beta, -alpha); board.pop()
-                if score > best_score: best_score = score; current_best = move
-                alpha = max(alpha, score)
-            if current_best is not None: best_move = current_best
-        elapsed = time.time() - start_time
-        if best_move is not None:
-            self.last_move_metrics = {
-                'move': best_move.uci(),
-                'depth': self.depth,
-                'nodes': self.nodes_searched,
-                'branching': root_branching,
-                'time': elapsed,
-                'source': 'iterative'
-            }
-            try:
-                info(f"AI metrics: move={best_move.uci()} depth={self.depth} nodes={self.nodes_searched} branching={root_branching} time={elapsed:.3f}s")
-            except Exception:
-                pass
+    def choose_move_iterative(self, board: chess.Board, time_limit: float = 5.0):
+        moves = list(board.legal_moves)
+        if not moves or board.is_game_over():
+            return None
+        start = time.monotonic()
+        self.nodes_searched = 0
+        best_move = moves[0]
+        completed_depth = 0
+        self._deadline = start + max(0.001, time_limit)
+        try:
+            for depth in range(1, max(1, self.depth) + 1):
+                alpha, beta = -10000000, 10000000
+                current_best, best_score = None, -10000000
+                for move in self._order_moves(board, moves, depth):
+                    self._check_deadline()
+                    board.push(move)
+                    try:
+                        score = -self.negamax(board, depth - 1, -beta, -alpha)
+                    finally:
+                        board.pop()
+                    if score > best_score:
+                        current_best, best_score = move, score
+                    alpha = max(alpha, score)
+                if current_best is not None:
+                    best_move = current_best
+                    completed_depth = depth
+        except TimeoutError:
+            pass
+        finally:
+            self._deadline = None
+        self._log_choice(board.board_fen(), best_move.uci(), board.turn)
+        self.last_move_metrics = {
+            'move': best_move.uci(), 'depth': completed_depth,
+            'nodes': self.nodes_searched, 'branching': len(moves),
+            'time': time.monotonic() - start, 'source': 'iterative',
+        }
         return best_move
+
     def _move_score(self, board: chess.Board, move: chess.Move) -> int:
         score = 0
         if move.promotion is not None:

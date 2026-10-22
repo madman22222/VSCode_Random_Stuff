@@ -1,52 +1,77 @@
-````markdown
-# VSCode_Random_Stuff — chess demo
-This repository contains a small Python chess demo (GUI + basic AI) under the `chess/` folder.
+# AI chess and self-play training
 
-Files in `chess/`:
-- `main.py` — a tkinter-based chess GUI that uses `python-chess` for game logic and a small negamax AI.
-- `requirements.txt` — lists `python-chess` and `Pillow`.
-- `assets/` — optional piece images and `assets/README.md` describing filenames.
-- `tools/check_engine.py` — CLI helper to verify or download a Stockfish engine and test it.
+A desktop chess game using Python, Tkinter, and `python-chess`. The built-in AI
+works without Stockfish or a GPU. Stockfish integration remains optional.
 
-How to run (Windows PowerShell):
+## Start in VS Code (Windows)
 
-1. Create and activate a virtual environment (recommended):
+Open the repository folder, then open **Terminal → New Terminal** and run:
 
 ```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r chess/requirements.txt
+.\.venv\Scripts\python.exe chess/main.py
 ```
 
-2. Install dependencies:
+In the window, choose **Player vs AI**, then press **Start Game**. You play White.
+Click your piece, then its destination. Other modes include Player vs Player,
+AI vs AI, and Training AI. The right-hand controls scroll to reveal more options.
+
+On macOS/Linux, create the environment with `python3 -m venv .venv`, install with
+`.venv/bin/python -m pip install -r chess/requirements.txt`, and launch with
+`.venv/bin/python chess/main.py`. The desktop requires Tkinter (Ubuntu/Debian:
+`sudo apt install python3-tk`). Training works without a display or Tkinter.
+
+## Train from the terminal
+
+From the repository root:
 
 ```powershell
-pip install -r requirements.txt
+.\.venv\Scripts\python.exe chess/main.py --training --games 10 --depth 2 --move-ms 100 --batch-size 5
 ```
 
-3. Run the GUI:
+The AI plays both sides, prints a result after each game, and stops after exactly
+10 completed games. Use `--games 0` to keep training until Ctrl+C. Stopping saves
+completed games; an interrupted game is discarded because it has no result.
+
+Options:
+
+| Option | Meaning |
+| --- | --- |
+| `--games 10` | Complete 10 games; 0 means run until stopped |
+| `--depth 2` | Maximum search depth in half-moves |
+| `--move-ms 100` | Time budget for each move in milliseconds |
+| `--batch-size 5` | Save after every 5 games; also save on exit |
+| `--max-plies 300` | End a game as a draw after 300 half-moves |
+| `--snapshot-batches 2` | Export readable learning after every 2 batches |
+| `--learning-file path/to/learn.json` | Use a separate learning database |
+| `--no-compress` | Save plain JSON instead of gzip |
+
+The GUI's **Training AI** mode uses the same training module, including its
+Games limit, batch size, move time, and snapshot settings. Press Pause to stop.
+Closing the window also stops training and saves it.
+
+## What the AI learns
+
+This is a small search engine with outcome-based move memory, not a neural
+network. It records wins, losses, and draws for moves in positions it has played.
+On later searches, those results influence which moves it examines first.
+Self-play does not guarantee stronger play, and games stopped by the move limit
+are recorded as draws. More training is not a measured strength improvement.
+
+By default, learning is stored beside the code in `chess/ai_learn.json.gz`, with
+a readable summary in `chess/ai_learn_readable.json`. The app reloads that memory
+when launched again. Writes replace the database atomically, and switching
+compression removes the stale alternate format. Custom `--learning-file` data
+is used only by runs that specify that path. Avoid training in two processes
+against the same learning file at once.
+
+## Checks
 
 ```powershell
-py main.py
+.\.venv\Scripts\python.exe run_tests.py
 ```
 
-Controls: click a piece, then click destination. After your move the AI will reply.
-
-Features
-
-- Move list and PGN save/load: save the current game to a PGN file or load a PGN file into the board (use the Save PGN / Load PGN buttons in the UI).
-- Piece images: the GUI supports PNG piece images placed in `assets/` (see `assets/README.md` for filenames). If images are not present, the GUI falls back to Unicode pieces.
-- Stockfish engine integration: you can toggle using an external UCI engine (Stockfish) from the UI. The app will try to auto-detect `stockfish` in your PATH; otherwise provide the path in the Engine box and click Detect/Use Engine.
-- Search metrics display: per-move depth, node count, branching factor, elapsed time, and source (book / iterative / aspiration / engine) with running averages.
-- Metrics CSV export: click "Export Metrics CSV" to save collected metrics for analysis.
- - CI metrics artifact: workflow generates a small self-play sample (`metrics_sample.csv`) for quick inspection of search performance.
-
-Downloader and verification
-
-- The GUI includes a "Download" button to fetch Stockfish releases and an optional automatic downloader when verification fails.
-- The GUI also exposes verification controls (Retries/Timeout/Backoff/Max wait) and a Verify button which will test the configured engine binary.
-- The CLI `tools/check_engine.py` supports verifying an engine, retry/backoff, and optional `--download` to fetch a release into `engines/`.
-
-Notes
-
-- If you want me to bundle sample PNG pieces or integrate Stockfish automatically (download and configure), I can add that, but it requires network access or that you provide the binary.
-````
+The suite covers legal moves, promotion, castling heuristics, timed-search board
+restoration, exact training limits, interrupted training, error reporting, saved
+learning reloads, compression switching, and the headless CLI.
