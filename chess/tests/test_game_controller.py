@@ -76,10 +76,16 @@ class TestGameControllerMocked(unittest.TestCase):
         
         # Patch tkinter module
         ttk_patcher = patch('game_controller.ttk')
-        ttk_patcher.start()
+        self.mock_ttk = ttk_patcher.start()
         self.addCleanup(ttk_patcher.stop)
         self.patcher_tk = patch('game_controller.tk')
         self.mock_tk = self.patcher_tk.start()
+        features_tk = patch('studio_features.tk', self.mock_tk)
+        features_tk.start()
+        self.addCleanup(features_tk.stop)
+        features_ttk = patch('studio_features.ttk', self.mock_ttk)
+        features_ttk.start()
+        self.addCleanup(features_ttk.stop)
         
         # Mock tk widgets
         self.mock_tk.Frame = MagicMock(return_value=MagicMock())

@@ -137,3 +137,88 @@ Black-side openings, Watch AI start/pause, stale-search cancellation, hints,
 paired undo, and dashboard resume. They skip in a headless run. Unit tests also
 cover legal moves, persistence, writer locking, budgets, exploration, resume,
 paired comparisons, failure reporting, and the CLI.
+
+## Tactical checks and practice
+
+The **Play → Practice** page contains seven hand-built puzzles: mate in one for
+both colors, winning a queen, promoting before a pawn is lost, escaping check,
+saving an attacked queen, and preventing mate. Legal alternatives that meet the
+puzzle goal are accepted. Hints are progressive; solved progress is saved in
+preferences. The game and clocks remain paused and untouched while practicing.
+
+Run the same tactical regressions from the repository root:
+
+```powershell
+python chess/tactical_suite.py --depth 2 --nodes 12000
+```
+
+## Game review
+
+Open **Play → Review** during or after a game. Use the first/previous/next/last
+buttons or Left/Right to inspect positions. Analyze game runs in the background
+and shows the played move, a suggested alternative, an estimated change in pawn
+units, and possible mistakes. Analysis is budgeted and shallow: suggestions can
+be wrong, and uncertain/mate scores are not presented as precise guarantees.
+Cancel stops after the current bounded search. Returning to Game restores the
+original board and learning log; review never trains the AI.
+
+## Recover an unfinished game
+
+`last_session.json` is written atomically after position changes, periodically
+for clock updates, and on close. The next launch restores move history, mode,
+side, orientation, learning log, and remaining clock time. Clocks stay paused
+until Play. Practice/review positions are never saved over the actual game.
+Finished games clear the recovery file. Invalid recovery files are retained as
+`last_session.invalid-*.json` when possible, and the app reports the problem.
+There is one recovery slot per preferences folder.
+
+## Accessibility
+
+Settings now has Appearance, Access, AI, and Files pages. **Access** offers
+Normal/Large text, a high-contrast board/highlights, and image, symbol, or letter
+pieces. Click the board, then use arrows to move visible focus and Enter/Space
+to select a piece or destination. Escape clears selection; Tab navigates normal
+controls. The board follows its orientation when moving keyboard focus. Form
+fields keep their normal editing keys.
+
+## Stronger comparisons and experimental scoring
+
+Before a new training run, the current move memory and scoring setting are saved
+as `ai_learn.json.previous.json`. Resume retains that previous-version reference.
+Newly trained data resets outcome scoring to off until revalidated.
+
+Comparison now defaults to 20 games **per opponent**, against both the untrained
+engine and that previous snapshot. Both use the same seeded opening pairs and
+node/depth budgets. Missing snapshots are reported. The conservative 95% range
+uses one color-swapped pair as the sampling unit and Hoeffding's bounded-mean
+inequality. Small samples produce wide ranges; this measures performance on the
+sampled opening distribution, not all chess positions or an Elo rating.
+
+```powershell
+python chess/main.py --benchmark --games 20 --against both
+python chess/main.py --benchmark --games 20 --against both --experiment
+```
+
+The optional experiment tests a root move-score prior from remembered outcomes.
+At least five observations are required, results are smoothed with neutral
+prior weight, and the adjustment is capped at 25 centipawns (a quarter-pawn).
+It cannot override checkmate scores. Ordinary play keeps this **off by default**.
+A completed experiment must have at least 20 pairs per opponent, a conservative
+lower score bound above 50% against both opponents, no majority of move-limit
+draws, and all tactical cases passing before the UI recommends enabling it.
+The Enable button also checks that the memory has not changed since evaluation.
+A small smoke experiment does not meet this bar and does not enable the feature.
+
+Reports retain settings, uncertainty ranges, tactical results, and a memory
+fingerprint. The 5-second search ceiling still applies on unusually slow
+positions/hardware. Tests and comparisons do not establish that training has
+improved strength without sufficient results.
+
+## Rendering and clock fixes
+
+Unchanged board squares retain their piece items; only changed pieces are
+recreated. Scaled image and focus-render caches avoid repeated graphics work.
+A local microbenchmark compares repeated unchanged redraws; it is not an FPS or
+cross-machine guarantee. Search-score priors are skipped entirely when inactive.
+Clocks use monotonic time, settle partial ticks on stop/switch, and cancel the
+old timer before starting another one.

@@ -64,6 +64,7 @@ class SimpleAI:
         self.killers = {}
         self.history = {}
         self.learning_db = {}
+        self.use_outcome_scoring = False
         self.game_log = []
         self._writer_lease = None
         self._learning_path = os.fspath(learning_path) if learning_path is not None else os.path.join(os.path.dirname(__file__), 'ai_learn.json')
@@ -88,6 +89,7 @@ class SimpleAI:
         ai.learning_db = copy.deepcopy(self.learning_db) if learning else {}
         ai.use_learning = self.use_learning if learning else False
         ai.compress_learning = self.compress_learning
+        ai.use_outcome_scoring = self.use_outcome_scoring if learning else False
         return ai
 
     def _load_learning_db(self) -> None:
@@ -104,6 +106,7 @@ class SimpleAI:
                 # Support legacy (flat dict) or new {'meta':..., 'data':{}}
                 if 'meta' in data and 'data' in data and isinstance(data['data'], dict):
                     self.learning_db = data['data']
+                    self.use_outcome_scoring = bool(data['meta'].get('outcome_scoring', False))
                 else:
                     self.learning_db = data
             debug(f"Loaded learning DB entries: {len(self.learning_db)}")
@@ -135,7 +138,7 @@ class SimpleAI:
         wrapper = {
             'meta': {'version': self.learning_version,
                      'saved': time.strftime('%Y-%m-%d %H:%M:%S'),
-                     'count': len(self.learning_db)},
+                     'count': len(self.learning_db), 'outcome_scoring': self.use_outcome_scoring},
             'data': self.learning_db,
         }
         compressed = bool(self.compress_learning)
@@ -268,6 +271,18 @@ class SimpleAI:
             return int((rating-0.5)*200)
         except Exception:
             return 0
+    def outcome_adjustment(self, fen_key, uci):
+        """Small root-only prior; five virtual draws smooth low-sample outcomes."""
+        if not self.use_learning or not self.use_outcome_scoring:
+            return 0
+        record = self.learning_db.get(fen_key + '|' + uci, {})
+        wins, losses, draws = (max(0, int(record.get(k, 0))) for k in ('w', 'l', 'd'))
+        total = wins + losses + draws
+        if total < 5:
+            return 0
+        # At most a quarter-pawn, far smaller than losing material or checkmate.
+        return round(25 * (wins - losses) / (total + 10))
+
     def game_phase(self, board: chess.Board) -> int:
         total_material = sum(len(board.pieces(pt, chess.WHITE))+len(board.pieces(pt, chess.BLACK)) for pt in [chess.QUEEN,chess.ROOK,chess.BISHOP,chess.KNIGHT])
         if total_material <= 6: return 2
@@ -467,6 +482,11 @@ class SimpleAI:
             self.transposition_table.clear()
         best_move = moves[0]
         completed_depth = 0
+        completed_score = None
+        fen_key = board.board_fen()
+        priors = ({move.uci(): self.outcome_adjustment(fen_key, move.uci()) for move in moves}
+                  if self.use_learning and self.use_outcome_scoring else {})
+        active_prior = any(priors.values())
         self._deadline = start + max(0.001, time_limit)
         try:
             for depth in range(1, max(1, self.depth) + 1):
@@ -476,15 +496,21 @@ class SimpleAI:
                     self._check_deadline()
                     board.push(move)
                     try:
-                        score = -self.negamax(board, depth - 1, -beta, -alpha)
+                        # Root priors differ per move; full root windows avoid unsound
+                        # alpha cutoffs when comparing their adjusted scores.
+                        score = -self.negamax(board, depth - 1, -beta,
+                                             10000000 if active_prior else -alpha)
                     finally:
                         board.pop()
+                    if active_prior and abs(score) < 9000000:
+                        score += priors.get(move.uci(), 0)
                     if score > best_score:
                         current_best, best_score = move, score
                     alpha = max(alpha, score)
                 if current_best is not None:
                     best_move = current_best
                     completed_depth = depth
+                    completed_score = best_score
         except TimeoutError:
             pass
         finally:
@@ -495,7 +521,7 @@ class SimpleAI:
         self.last_move_metrics = {
             'move': best_move.uci(), 'depth': completed_depth,
             'nodes': self.nodes_searched, 'branching': len(moves),
-            'time': time.monotonic() - start, 'source': 'iterative',
+            'time': time.monotonic() - start, 'source': 'iterative', 'score_cp': completed_score,
         }
         return best_move
 

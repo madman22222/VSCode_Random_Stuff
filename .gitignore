@@ -10,3 +10,6 @@ metrics_sample.csv
 *.training.json
 *.benchmark.json
 *.json.lock
+*.previous.json
+last_session.json
+last_session.invalid-*.json
