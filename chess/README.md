@@ -15,7 +15,9 @@ py -m venv .venv
 
 In the window, choose **Player vs AI**, then press **Start Game**. You play White.
 Click your piece, then its destination. Other modes include Player vs Player,
-AI vs AI, and Training AI. The right-hand controls scroll to reveal more options.
+AI vs AI, and Training AI. The board and pieces resize with the window. Use the Play, Training, Settings,
+and Tools tabs to find controls. The old scrolling control panel has been
+replaced by native tabs to avoid stale redraws while scrolling on Windows.
 
 On macOS/Linux, create the environment with `python3 -m venv .venv`, install with
 `.venv/bin/python -m pip install -r chess/requirements.txt`, and launch with
@@ -75,3 +77,7 @@ against the same learning file at once.
 The suite covers legal moves, promotion, castling heuristics, timed-search board
 restoration, exact training limits, interrupted training, error reporting, saved
 learning reloads, compression switching, and the headless CLI.
+
+For real desktop layout checks (including resize, tabs, themes, and scaled
+clicks), run `python run_tests.py` with a desktop display. On Linux CI, use
+`xvfb-run -a python run_tests.py`. These three tests skip when no display exists.

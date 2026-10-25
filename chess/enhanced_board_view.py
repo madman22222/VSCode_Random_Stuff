@@ -38,7 +38,11 @@ class EnhancedBoardView:
         self.drag_item: Optional[int] = None
         self.drag_canvas: Optional[tk.Canvas] = None
         self.animating = False
-        
+        self.square_size = SQUARE_SIZE
+        self._board = None
+        self._piece_images = None
+        self._scaled_images = {}
+        self._source_images = None
         self._build_grid()
     
     def _get_colors(self) -> Dict[str, str]:
@@ -95,10 +99,10 @@ class EnhancedBoardView:
             
             # Determine square color
             # Theme should NOT affect base board squares; use fixed classic colors
-            is_light = (rank + file) % 2 == 0
+            is_light = (rank + file) % 2 == 1
             square_color = LIGHT_COLOR if is_light else DARK_COLOR
             
-            canvas = tk.Canvas(self.parent, width=SQUARE_SIZE, height=SQUARE_SIZE,
+            canvas = tk.Canvas(self.parent, width=self.square_size, height=self.square_size,
                              bg=square_color, highlightthickness=0)
             canvas.grid(row=row, column=col)
             
@@ -147,22 +151,30 @@ class EnhancedBoardView:
         """Flip board orientation."""
         self.flipped = not self.flipped
         self._build_grid()
+        self._restore_position()
     
     def set_theme(self, theme: str) -> None:
         """Change color theme."""
         if theme in THEMES:
             self.theme = theme
             self._build_grid()
+            self._restore_position()
     
     def set_show_coordinates(self, show: bool) -> None:
         """Toggle coordinate labels."""
         self.show_coordinates = show
         self._build_grid()
+        self._restore_position()
     
     def update(self, board: chess.Board, piece_images: Optional[dict]):
         """Render pieces for current board state."""
+        self._board = board.copy()
+        self._piece_images = piece_images
+        if piece_images is not self._source_images:
+            self._source_images = piece_images
+            self._scaled_images.clear()
         colors = self._get_colors()
-        
+
         for square, canvas in self.canvases.items():
             piece = board.piece_at(square)
             rank = chess.square_rank(square)
@@ -170,7 +182,7 @@ class EnhancedBoardView:
             
             # Determine base square color
             # Use fixed base board colors regardless of theme
-            is_light = (rank + file) % 2 == 0
+            is_light = (rank + file) % 2 == 1
             square_color = LIGHT_COLOR if is_light else DARK_COLOR
             
             # Apply last move highlighting
@@ -193,26 +205,52 @@ class EnhancedBoardView:
             if piece is not None:
                 if piece_images:
                     key = piece.symbol()
-                    img = piece_images.get(key)
+                    img = self._scaled_piece(key, piece_images.get(key))
                     if img:
-                        item_id = canvas.create_image(SQUARE_SIZE // 2, SQUARE_SIZE // 2, image=img)
+                        item_id = canvas.create_image(self.square_size // 2, self.square_size // 2, image=img)
                         self.piece_items[square] = item_id
                         setattr(canvas, '_img_ref', img)
                     else:
                         text = PIECE_UNICODE[piece.symbol()]
-                        item_id = canvas.create_text(SQUARE_SIZE // 2, SQUARE_SIZE // 2,
+                        item_id = canvas.create_text(self.square_size // 2, self.square_size // 2,
                                                     text=text,
-                                                    font=('Arial', int(SQUARE_SIZE * 0.6), 'bold'),
+                                                    font=('Arial', int(self.square_size * 0.65), 'bold'),
                                                     fill='black')
                         self.piece_items[square] = item_id
                 else:
                     text = PIECE_UNICODE[piece.symbol()]
-                    item_id = canvas.create_text(SQUARE_SIZE // 2, SQUARE_SIZE // 2,
+                    item_id = canvas.create_text(self.square_size // 2, self.square_size // 2,
                                                 text=text,
-                                                font=('Arial', int(SQUARE_SIZE * 0.6), 'bold'),
+                                                font=('Arial', int(self.square_size * 0.65), 'bold'),
                                                 fill='black')
                     self.piece_items[square] = item_id
     
+    def _scaled_piece(self, key, image):
+        if image is None:
+            return None
+        cache_key = (key, self.square_size)
+        if cache_key not in self._scaled_images:
+            from PIL import Image, ImageTk
+            pixels = max(12, int(self.square_size * 0.82))
+            original = ImageTk.getimage(image)
+            self._scaled_images[cache_key] = ImageTk.PhotoImage(
+                original.resize((pixels, pixels), Image.Resampling.LANCZOS), master=self.parent)
+        return self._scaled_images[cache_key]
+
+    def _restore_position(self):
+        if self._board is not None:
+            self.update(self._board, self._piece_images)
+
+    def resize(self, square_size):
+        """Resize existing cells; never rebuild widgets during a resize gesture."""
+        if square_size == self.square_size:
+            return
+        self.square_size = square_size
+        self._scaled_images.clear()
+        for canvas in self.canvases.values():
+            canvas.configure(width=square_size, height=square_size)
+        self._restore_position()
+
     def animate_move(self, move: chess.Move, board: chess.Board,
                     piece_images: Optional[dict], callback: Optional[Callable] = None) -> None:
         """Animate a move from source to destination."""
@@ -235,7 +273,7 @@ class EnhancedBoardView:
             return
         
         # Create animation canvas
-        anim_canvas = tk.Canvas(self.parent, width=SQUARE_SIZE, height=SQUARE_SIZE,
+        anim_canvas = tk.Canvas(self.parent, width=self.square_size, height=self.square_size,
                                bg='', highlightthickness=0)
         anim_canvas.grid(row=from_row, column=from_col)
         try:
@@ -246,13 +284,13 @@ class EnhancedBoardView:
         # Draw piece on animation canvas
         if piece_images and piece.symbol() in piece_images:
             img = piece_images[piece.symbol()]
-            anim_item = anim_canvas.create_image(SQUARE_SIZE // 2, SQUARE_SIZE // 2, image=img)
+            anim_item = anim_canvas.create_image(self.square_size // 2, self.square_size // 2, image=img)
             setattr(anim_canvas, '_img_ref', img)
         else:
             text = PIECE_UNICODE[piece.symbol()]
-            anim_item = anim_canvas.create_text(SQUARE_SIZE // 2, SQUARE_SIZE // 2,
+            anim_item = anim_canvas.create_text(self.square_size // 2, self.square_size // 2,
                                                text=text,
-                                               font=('Arial', int(SQUARE_SIZE * 0.6), 'bold'),
+                                               font=('Arial', int(self.square_size * 0.65), 'bold'),
                                                fill='black')
         
         # Calculate movement
@@ -274,7 +312,7 @@ class EnhancedBoardView:
             
             # Move canvas
             anim_canvas.grid(row=from_row, column=from_col, rowspan=1, columnspan=1)
-            anim_canvas.place(x=int(new_col * SQUARE_SIZE), y=int(new_row * SQUARE_SIZE))
+            anim_canvas.place(x=int(new_col * self.square_size), y=int(new_row * self.square_size))
             
             # Schedule next frame
             self.parent.after(ANIMATION_DELAY, lambda: animate_frame(frame + 1))
@@ -300,7 +338,7 @@ class EnhancedBoardView:
             rank = chess.square_rank(square)
             file = chess.square_file(square)
             # Restore fixed base board colors
-            is_light = (rank + file) % 2 == 0
+            is_light = (rank + file) % 2 == 1
             square_color = LIGHT_COLOR if is_light else DARK_COLOR
             
             # Preserve last move highlighting
