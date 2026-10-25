@@ -18,7 +18,7 @@ contains validation evidence; source/desktop and both extracted-edition checks
 must pass before delivery. The board counts **56 delivered feature/planning cards**
 including these four cards once the delivery PR is merged.
 
-Local validation: 140 tests pass headlessly (34 require a desktop); new cases cover
+Local validation: 142 tests pass headlessly (34 require a desktop); new cases cover
 schedules, alternatives, coaching isolation, trend compatibility and upgrading old
 preferences. CI exercises the native text scrolling and synthetic scaling at
 100/125/150/200%. Physical checks remain separate. Previous reliability evidence

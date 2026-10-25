@@ -117,6 +117,7 @@ corpus checksums, depth/node/ply budgets, seeds, baseline memory and scoring mod
 are grouped separately. Older raw reports remain viewable/exportable. Repeated
 seeds or unchanged memory are not independent trials and intervals are not pooled.
 A first-to-latest score change is descriptive; it does not establish improvement.
-At most the latest 500 history files are inspected; unreadable files are skipped.
+At most the latest 500 history files and 8 MiB of input are inspected in a
+background worker; unreadable/oversized files are skipped.
 Long explanations use native scrollable text widgets rather than a canvas with
 embedded child windows.

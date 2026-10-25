@@ -52,7 +52,7 @@ def trend_text(histories):
              'Repeated runs of the same memory or seed are not independent evidence; intervals are not pooled.\n']
     for number, (signature, items) in enumerate(groups.items(), 1):
         corpus, depth, nodes, plies, opponent, scoring, seed, baseline, baseline_scoring = signature
-        lines.append(f'Group {number}: corpus {corpus[:10]}, depth {depth}, nodes {nodes}, max plies {plies}, opponent {opponent}, scoring {scoring}, seed {seed}, baseline {str(baseline)[:10]}')
+        lines.append(f'Group {number}: corpus {corpus[:10]}, depth {depth}, nodes {nodes}, max plies {plies}, opponent {opponent}, scoring {scoring}, seed {seed}, baseline {str(baseline)[:10]}, baseline scoring {baseline_scoring}')
         for item in sorted(items, key=lambda x: x['source']):
             lines.append(f"{item['source']}: memory {item['memory'][:10]}, score {item['score']}%, 95% range {item['interval']}, pairs {item['pairs']}, cutoff draws {item['cutoffs']}, remembered roots {item['remembered_roots']}")
         if len(items) >= 2:
@@ -63,3 +63,21 @@ def trend_text(histories):
     if not groups:
         lines.append('No complete protocol-2 comparison reports yet. Run Compare to begin. Older reports remain available in the raw history viewer.')
     return '\n'.join(lines)
+
+
+def history_text(paths, max_files=500, max_bytes=8 * 1024 * 1024):
+    """Bound total history input as well as each JSON; callers run this off the UI thread."""
+    from data_validation import read_json
+    histories, skipped, consumed = [], 0, 0
+    for path in list(paths)[:max_files]:
+        try:
+            size = path.stat().st_size
+            if consumed + size > max_bytes:
+                skipped += 1
+                continue
+            consumed += size
+            histories.append((path.name, read_json(path)))
+        except (OSError, ValueError, TypeError):
+            skipped += 1
+    return trend_text(histories) + (f'\nUnreadable/oversized reports skipped: {skipped}. '
+                                  f'Limits: latest {max_files} files, {max_bytes // 1024} KiB input.')

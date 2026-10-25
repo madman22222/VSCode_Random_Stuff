@@ -129,3 +129,26 @@ class TestCoachingLearning(unittest.TestCase):
     def test_malformed_trend_rows_are_skipped_without_crashing_history(self):
         for key, value in (('depth', []), ('score_percent', float('nan')), ('ci95_score_percent', [80, 20]), ('baseline_memory_fingerprint', {}), ('candidate_outcome_scoring', [])):
             self.assertEqual(observations([('invalid', self.report(**{key: value}))]), [])
+
+    def test_history_input_is_bounded_and_invalid_files_do_not_hide_valid_reports(self):
+        import json
+        from comparison_trends import history_text
+        with tempfile.TemporaryDirectory() as temp:
+            valid = Path(temp) / 'a.json'; valid.write_text(json.dumps(self.report()))
+            corrupt = Path(temp) / 'b.json'; corrupt.write_text('{')
+            oversized = Path(temp) / 'c.json'; oversized.write_text('x' * 2000)
+            text = history_text([valid, corrupt, oversized], max_bytes=1000)
+            self.assertIn('Group 1', text)
+            self.assertIn('reports skipped: 2', text)
+            self.assertEqual(corrupt.read_text(), '{')
+
+    def test_review_uses_custom_black_move_number_in_coaching(self):
+        from simple_ai import SimpleAI
+        from game_review import ReviewRunner
+        board = chess.Board('7k/8/8/8/8/8/8/R5K1 b - - 0 32')
+        board.push(next(iter(board.legal_moves)))
+        with tempfile.TemporaryDirectory() as temp:
+            runner = ReviewRunner(board, SimpleAI(depth=1, learning_path=Path(temp) / 'memory.json'), depth=1, nodes=20)
+            runner.start(); runner.thread.join(10)
+            self.assertIsNone(runner.last_error)
+            self.assertIn('Move 32...', coaching_moments(runner.rows)[0]['text'])
