@@ -1,21 +1,19 @@
-Assets for piece images
+# Piece images
 
-Place PNG piece images in this folder if you want graphical pieces instead of Unicode characters.
+The repository includes PNG pieces and the Windows portable build bundles them.
+Settings → Access can also use symbols or letters.
 
-Expected filenames (lowercase):
-- wp.png (white pawn)
-- wn.png (white knight)
-- wb.png (white bishop)
-- wr.png (white rook)
-- wq.png (white queen)
-- wk.png (white king)
-- bp.png (black pawn)
-- bn.png (black knight)
-- bb.png (black bishop)
-- br.png (black rook)
-- bq.png (black queen)
-- bk.png (black king)
+| Color | Required filenames |
+| --- | --- |
+| White | `wp.png`, `wn.png`, `wb.png`, `wr.png`, `wq.png`, `wk.png` |
+| Black | `bp.png`, `bn.png`, `bb.png`, `br.png`, `bq.png`, `bk.png` |
 
-Images should be roughly square. The GUI will resize to 64x64.
+Use square PNGs, ideally with transparent backgrounds. The board scales and
+caches images for the current square size rather than assuming a fixed 64×64
+board. Source resources resolve relative to this project; portable resources
+live under the bundled resource directory (`_internal/assets`). Mutable saves
+belong in the data profile, not among assets.
 
-You can get free chess piece PNGs from many open-source icon packs. Place them here and restart the app.
+For a custom source build, replace the relevant PNGs and restart the app. Rebuild
+the Windows ZIP to distribute replacements. Preserve attribution/license notices
+for any third-party artwork you add. See [packaging](../../packaging/README.md).

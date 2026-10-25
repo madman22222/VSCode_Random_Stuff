@@ -1,0 +1,75 @@
+# Windows portable build and release
+
+The end-user download is [ChessStudio-Windows.zip](https://github.com/madman22222/VSCode_Random_Stuff/releases/latest/download/ChessStudio-Windows.zip).
+It targets Windows 10/11 x64 and needs no separate Python installation.
+For setup and migration see the [user guide](../chess/README.md) and
+[upgrade guide](../chess/UPGRADES_GUIDE.md).
+
+## Build locally
+
+Use a Windows x64 machine, Git, and Python 3.11 x64. From a clean checkout at the
+repository root, preferably in a dedicated virtual environment:
+
+```powershell
+python -m pip install -r packaging/requirements-build.txt
+python run_tests.py
+python packaging/build_windows.py
+python packaging/smoke_windows.py --zip dist/ChessStudio-Windows.zip --report portable-smoke-report.json
+```
+
+Build dependencies and dependency source downloads require a connection.
+PyInstaller cannot build this Windows app from Linux. The build script rejects
+unsupported hosts. `--output` selects the output directory and `--version`
+sets the recorded revision; default revision is `git rev-parse HEAD`. Build a
+clean checkout so recorded revision and included source describe the same files.
+
+## Outputs
+
+| Output | Purpose |
+| --- | --- |
+| `dist/ChessStudio/` | Unpacked app folder |
+| `dist/ChessStudio-Windows.zip` | Distributable archive with a single ChessStudio root |
+| `dist/ChessStudio-Windows.zip.sha256` | Archive checksum |
+| `dist/ChessStudio-Windows.build-info.json` | Revision, runtime/package versions, size, checksum |
+
+The archive contains `ChessStudio.exe`, `ChessStudio-CLI.exe`, shared `_internal`
+runtime/assets, writable `data/`, `README.txt`, `BUILD_INFO.json`, `LICENSES/`,
+and `SOURCE/`. The latter folders retain dependency notices and source archives;
+they are not installation steps. Stockfish is optional and is not bundled.
+`ChessStudio.spec` defines both entry points and resource/hidden-import inclusion.
+
+## Test the actual package
+
+The smoke script extracts the ZIP to a new path containing spaces, launches from
+an unrelated directory, removes Python from the child's PATH, and clears runtime
+and data overrides. It checks frozen runtime paths and assets, drives isolated
+GUI diagnostics, and trains through the console companion. A successful source
+test run alone does not replace this check. Inspect the JSON report and process
+exit status; retain reports when diagnosing failures.
+
+To verify a downloaded archive in PowerShell:
+
+```powershell
+Get-FileHash .\ChessStudio-Windows.zip -Algorithm SHA256
+Get-Content .\ChessStudio-Windows.zip.sha256
+```
+
+Compare the hash strings; filename formatting and hex letter case may differ.
+
+## Automated releases
+
+`.github/workflows/windows-portable.yml` runs for relevant `chess/`, `packaging/`,
+and workflow changes on pull requests and pushes to main, and supports manual
+workflow dispatch. A Windows runner installs build dependencies, runs source and
+desktop regressions, builds, tests the extracted bundle, and uploads artifacts.
+Pull requests do not publish public releases.
+
+On main, a successful build feeds a separate publish job. It creates a latest
+GitHub Release tagged `windows-RUNNUMBER-SHORTSHA`, targeting the exact revision,
+with ZIP/checksum/build metadata and `release-notes.md`. Failure blocks publication.
+The diagnostic artifact is uploaded when available even on failure. The stable
+latest-download link in the READMEs follows new releases automatically.
+
+Update `PORTABLE_README.txt` for instructions inside future ZIPs and
+`release-notes.md` for future release descriptions. Already published archives
+remain tied to their build revision; repository edits do not modify old ZIPs.

@@ -25,3 +25,16 @@ Optional source archives and dependency license notices are in SOURCE/ and
 LICENSES/. You do not need to open or install them to run the app.
 
 Project: https://github.com/madman22222/VSCode_Random_Stuff
+
+Full user guide: https://github.com/madman22222/VSCode_Random_Stuff/blob/main/chess/README.md
+Upgrade and troubleshooting: https://github.com/madman22222/VSCode_Random_Stuff/blob/main/chess/UPGRADES_GUIDE.md
+
+FIRST STEPS
+Open Play, choose Play AI / Two players / Watch AI, then press Play.
+Training has Start, Stop and save, and Resume. Compare measures saved memory
+against fixed opponents; training is not a guarantee of stronger play.
+Play also contains Practice puzzles and shallow Review analysis.
+Settings includes larger text, high contrast, and keyboard-accessible pieces.
+
+Keyboard: click the board, arrows move focus, Enter/Space selects, Escape clears.
+Use Save to export a PGN. Keep a backup of data/ before updating or resetting.
