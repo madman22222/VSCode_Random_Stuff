@@ -10,14 +10,28 @@ LESSONS = (
     ('rook', '4. Rook and king ending', 'Use opposition and a rank cut-off to remove escape squares.', ('guided:rook-mate',)),
     ('pawns', '5. King and pawn ending', 'Study king support and reserve pawn tempi against the shown replies.', ('guided:pawn-ending',)),
     ('combinations', '6. Calculate the reply', 'Look beyond the first threat; practice both authored defenses.', ('guided:discovery',)),
+    ('openings', '7. Opening principles', 'Develop pieces and influence the center; examples are not a complete repertoire.', ('extended:develop', 'extended:center')),
+    ('defense', '8. Respond to threats', 'Answer check legally before pursuing your own plan.', ('extended:block-check', 'extended:capture-checker')),
+    ('endgames', '9. Endgames with either color', 'Reverse the board, coordinate pieces and distinguish mate from stalemate.', ('extended:queen-mate-black', 'extended:rook-mate-black', 'extended:pawn-ending-black', 'extended:avoid-stalemate')),
 )
 
 
 @lru_cache(maxsize=1)
 def course_puzzles():
-    return tuple(load_pack(resource_dir() / 'assets/puzzles/guided-course.json'))
+    return tuple(load_pack(resource_dir() / 'assets/puzzles/guided-course.json') +
+                 load_pack(resource_dir() / 'assets/puzzles/extended-course.json'))
 
 
 def lesson_status(lesson, solved):
     completed = len(set(lesson[3]) & set(solved))
     return completed, len(lesson[3])
+
+
+def puzzle_level(puzzle_id):
+    if puzzle_id.startswith('extended:'):
+        return 0 if puzzle_id.split(':')[1] in ('develop', 'center', 'block-check', 'capture-checker') else 3
+    if puzzle_id in ('mate-white', 'mate-black', 'guided:pin'):
+        return 0
+    if puzzle_id == 'guided:fork':
+        return 1
+    return 2

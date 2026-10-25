@@ -1,0 +1,194 @@
+{
+  "version": 2,
+  "id": "extended",
+  "author": "Chess Studio original teaching exercises and color-reversed original endings",
+  "puzzles": [
+    {
+      "id": "develop",
+      "title": "Develop a knight and influence the center",
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "lines": [
+        [
+          "g1f3"
+        ],
+        [
+          "b1c3"
+        ]
+      ],
+      "explanation": "Develop a knight toward central squares. Other opening plans exist; this exercise practices knight development.",
+      "theme": "Opening",
+      "difficulty": "Guided",
+      "goal": "line",
+      "hints": [
+        "Develop a knight toward central squares. Other opening plans exist; this exercise practices knight development.",
+        "Compare the accepted forcing or developing moves; the next hint shows one."
+      ]
+    },
+    {
+      "id": "center",
+      "title": "Support central play",
+      "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+      "lines": [
+        [
+          "g1f3"
+        ],
+        [
+          "b1c3"
+        ],
+        [
+          "d2d4"
+        ]
+      ],
+      "explanation": "Develop toward the center or challenge it with a pawn. These are examples, not a complete opening repertoire.",
+      "theme": "Opening",
+      "difficulty": "Guided",
+      "goal": "line",
+      "hints": [
+        "Develop toward the center or challenge it with a pawn. These are examples, not a complete opening repertoire.",
+        "Compare the accepted forcing or developing moves; the next hint shows one."
+      ]
+    },
+    {
+      "id": "block-check",
+      "title": "Answer a rook check",
+      "fen": "4r1k1/8/8/8/8/8/3B4/4K3 w - - 0 1",
+      "lines": [
+        [
+          "d2e3"
+        ],
+        [
+          "e1d1"
+        ],
+        [
+          "e1f1"
+        ],
+        [
+          "e1f2"
+        ]
+      ],
+      "explanation": "Your king is in check: block the rook line or move the king to safety. Recheck the opponent response.",
+      "theme": "Defense",
+      "difficulty": "Guided",
+      "goal": "line",
+      "hints": [
+        "Your king is in check: block the rook line or move the king to safety. Recheck the opponent response.",
+        "Compare the accepted forcing or developing moves; the next hint shows one."
+      ]
+    },
+    {
+      "id": "capture-checker",
+      "title": "Capture the checking rook",
+      "fen": "6k1/8/8/8/8/8/4r3/4K3 w - - 0 1",
+      "lines": [
+        [
+          "e1e2"
+        ]
+      ],
+      "explanation": "When legal, capturing the checking piece ends its threat. Check whether the destination is defended.",
+      "theme": "Defense",
+      "difficulty": "Guided",
+      "goal": "line",
+      "hints": [
+        "When legal, capturing the checking piece ends its threat. Check whether the destination is defended.",
+        "Compare the accepted forcing or developing moves; the next hint shows one."
+      ]
+    },
+    {
+      "id": "queen-mate-black",
+      "title": "Black: Queen ending / Two moves: Bring in the king before mating",
+      "fen": "8/8/8/8/4q3/5k2/8/7K b - - 0 1",
+      "lines": [
+        [
+          "f3g3",
+          "h1g1",
+          "e4e1"
+        ],
+        [
+          "f3g3",
+          "h1g1",
+          "e4g2"
+        ]
+      ],
+      "explanation": "King support removes escape squares. Several final queen mates are accepted.",
+      "theme": "Endgame",
+      "difficulty": "Guided",
+      "goal": "mate",
+      "hints": [
+        "King support removes escape squares. Several final queen mates are accepted.",
+        "Compare the accepted forcing or developing moves; the next hint shows one."
+      ]
+    },
+    {
+      "id": "rook-mate-black",
+      "title": "Black: Rook ending / Two moves: Use king opposition and the back rank",
+      "fen": "r7/8/8/8/8/5k2/8/7K b - - 0 1",
+      "lines": [
+        [
+          "f3g3",
+          "h1g1",
+          "a8a1"
+        ]
+      ],
+      "explanation": "The king covers escape squares while the rook controls the back rank.",
+      "theme": "Endgame",
+      "difficulty": "Guided",
+      "goal": "mate",
+      "hints": [
+        "The king covers escape squares while the rook controls the back rank.",
+        "Compare the accepted forcing or developing moves; the next hint shows one."
+      ]
+    },
+    {
+      "id": "pawn-ending-black",
+      "title": "Black: Pawn ending / Guided line: King support and a reserve pawn move",
+      "fen": "8/8/8/4p3/4k3/8/4K3/8 b - - 0 1",
+      "lines": [
+        [
+          "e4d4",
+          "e2d2",
+          "e5e4",
+          "d2e2",
+          "e4e3",
+          "e2e1",
+          "d4d3",
+          "e1f1",
+          "e3e2",
+          "f1g1",
+          "e2e1q"
+        ]
+      ],
+      "explanation": "This illustrative line uses king support and a pawn tempo. It is not proof against every possible defense.",
+      "theme": "Endgame",
+      "difficulty": "Guided",
+      "goal": "promotion",
+      "hints": [
+        "This illustrative line uses king support and a pawn tempo. It is not proof against every possible defense.",
+        "Compare the accepted forcing or developing moves; the next hint shows one."
+      ]
+    },
+    {
+      "id": "avoid-stalemate",
+      "title": "Choose mate instead of stalemate",
+      "fen": "7k/5K2/8/6Q1/8/8/8/8 w - - 0 1",
+      "lines": [
+        [
+          "g5g7"
+        ],
+        [
+          "g5h5"
+        ],
+        [
+          "g5h6"
+        ]
+      ],
+      "explanation": "Check the final position: the opponent must be in check with no legal reply. A king with no legal moves but no check is stalemate.",
+      "theme": "Endgame",
+      "difficulty": "Guided",
+      "goal": "mate",
+      "hints": [
+        "Check the final position: the opponent must be in check with no legal reply. A king with no legal moves but no check is stalemate.",
+        "Compare the accepted forcing or developing moves; the next hint shows one."
+      ]
+    }
+  ]
+}

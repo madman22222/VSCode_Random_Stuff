@@ -46,3 +46,21 @@ accessibility audit based only on synthesized key events.
 CI tests extracted source/frozen builds with temporary profiles and automated
 interruption cases. This checklist records the owner/device-specific upgrade
 experience; it has not been marked complete by those automated checks.
+
+## Coaching/adaptive release walkthrough on your Windows computer
+
+- [ ] Play or load a finished game; Analyze game, open Coaching moments, inspect
+      each position, and use Practice this idea. Return to Game and confirm the
+      original position/result is unchanged.
+- [ ] Miss an exercise, choose Adaptive practice and confirm it returns. Solve
+      with a hint, restart the app and confirm progress/schedule persist.
+- [ ] At 100%, 125%, 150% and 200% scaling, scroll a long explanation, change tabs,
+      resize/maximize and check for stale pixels, clipped controls and correct clicks.
+- [ ] With keyboard/NVDA/Narrator, select a coaching moment and activate its
+      practice button; verify native text explanations are readable/navigable.
+- [ ] Run two comparisons under identical settings, then change one budget; verify
+      the history trend separates the changed settings and shows each interval.
+
+Record the revision from About, Windows version, GPU/driver and scale alongside
+results. Automated synthetic scaling, scroll/layout and profile-upgrade tests are
+partial evidence; this checklist is intentionally not marked complete.

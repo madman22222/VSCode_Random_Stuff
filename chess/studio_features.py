@@ -56,8 +56,7 @@ class StudioFeatures:
                                ('Next', self._next_practice)):
             tk.Button(row, text=label, command=command).pack(side='left', fill='x', expand=True)
         self.practice_text = tk.StringVar(master=self.master, value='Choose a puzzle. Your game remains paused and saved.')
-        tk.Label(self.practice_workspace, textvariable=self.practice_text, wraplength=365,
-                 justify='left').pack(fill='x', pady=8)
+        self._message_area(self.practice_workspace, self.practice_text)
 
         self._lesson_changed(save=False)
 
@@ -74,9 +73,10 @@ class StudioFeatures:
         self.review_budget = tk.StringVar(master=self.master, value='Quick')
         ttk.Combobox(self.review_workspace, textvariable=self.review_budget, values=('Quick', 'Deeper'),
                      state='readonly').pack(fill='x')
+        tk.Button(self.review_workspace, text='Coaching moments → related practice',
+                  command=self._coaching_summary).pack(fill='x', pady=3)
         self.review_text = tk.StringVar(master=self.master, value='Step through the current or finished game. Left/Right also navigate.')
-        tk.Label(self.review_workspace, textvariable=self.review_text, wraplength=365,
-                 justify='left').pack(fill='x', pady=6)
+        self._message_area(self.review_workspace, self.review_text)
         tk.Label(self.review_workspace, text='Estimates use a short search and can be wrong.',
                  wraplength=365, justify='left').pack(fill='x')
 
@@ -195,6 +195,7 @@ class StudioFeatures:
             return
         selected = self.workspace.select()
         if selected == str(self.practice_workspace) and self._activity != 'practice':
+            self._cancel_review()
             self._suspend_game()
             self._activity = 'practice'
             self._load_practice()
@@ -208,6 +209,25 @@ class StudioFeatures:
             self._review_step(0)
         elif selected == str(self.game_workspace):
             self._return_to_game()
+
+    def _message_area(self, parent, variable):
+        # Native Text scrolling avoids the old embedded-window canvas redraw path.
+        frame = tk.Frame(parent)
+        frame.pack(fill='both', expand=True, pady=6)
+        text = tk.Text(frame, wrap='word', height=5, width=20, state='disabled', takefocus=True)
+        scrollbar = ttk.Scrollbar(frame, orient='vertical', command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side='right', fill='y')
+        text.pack(side='left', fill='both', expand=True)
+        def refresh(*args):
+            text.configure(state='normal')
+            text.delete('1.0', 'end')
+            text.insert('1.0', variable.get())
+            text.configure(state='disabled')
+            text.yview_moveto(0)
+        variable.trace_add('write', refresh)
+        refresh()
+        return text
 
     def _review_step(self, delta):
         if self._activity != 'review' or self.review_board is None:

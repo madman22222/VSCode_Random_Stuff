@@ -39,3 +39,10 @@ records. Training checkpoints now have a validated memory/progress recovery pair
 Repeated training/resume/cancel tests and interrupted-save regressions are included.
 Pillow/build tooling updates preserve Python 3.10 source compatibility. Physical
 Windows DPI and screen-reader verification remain open; no strength gain is claimed.
+
+Coaching now selects up to three review moments and links them to related practice.
+Adaptive practice schedules missed/hinted exercises sooner and introduces harder
+material. Nine lessons/21 exercises include opening principles, defense and more
+endgames. Comparison history groups compatible protocol-2 runs with uncertainty,
+baseline identity and cutoff draws. Native scrollable explanations keep long text
+usable. Physical monitor/screen-reader checks still require hands-on verification.

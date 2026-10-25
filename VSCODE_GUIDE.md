@@ -63,3 +63,10 @@ continuations, evaluation corpus and checkpoint recovery as the portable build.
 See [guided learning](chess/GUIDED_LEARNING.md). `setup_dev.py` applies the reviewed
 constraints: Pillow 12.3 on Python 3.10, Pillow 13 on Python 3.11+, and the current
 reviewed build tooling. The application uses Pillow's supported Resampling API.
+
+Coaching/adaptive update: both editions share nine lessons/21 exercises, three
+review moments linked to practice, local spaced review scheduling and comparable
+protocol-2 evaluation trends. Existing solved progress is retained. Preserve
+`chess_config.json` with the complete data folder to keep the new practice schedule.
+Physical Windows scaling, screen-reader and owner-profile upgrade checks remain
+unverified; use the manual checklist and retain a backup.

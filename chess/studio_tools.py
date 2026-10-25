@@ -206,6 +206,12 @@ class StudioTools:
                     listing.delete(index)
                 except OSError as exc:
                     self._tool_error('Delete failed', exc)
+        def trends():
+            from comparison_trends import history_text
+            paths = list(choices)
+            self._run_tool('Reading comparison trends', lambda: history_text(paths),
+                           lambda text: self._text_dialog('Comparable evaluation trends', text))
+        tk.Button(window, text='Compare trends across saved versions', command=trends).pack(fill='x')
         tk.Button(window, text='View / export selected report', command=export).pack(fill='x')
         tk.Button(window, text='Delete selected history report…', command=delete).pack(fill='x')
         tk.Label(window, text='History is isolated per training profile. No reports yet.' if not choices else

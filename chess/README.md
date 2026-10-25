@@ -183,7 +183,7 @@ paired comparisons, failure reporting, and the CLI.
 
 ## Tactical checks and practice
 
-The **Play → Practice** page contains six guided lessons and 13 built-in exercises.
+The **Play → Practice** page contains nine guided lessons and 21 built-in exercises.
 The original seven hand-built puzzles cover mate in one for
 both colors, winning a queen, promoting before a pawn is lost, escaping check,
 saving an attacked queen, and preventing mate. Six new exercises cover forks, pins,
@@ -375,3 +375,17 @@ course. PDFs themselves cannot be imported as training memory.
 [The VS Code edition](../VSCODE_GUIDE.md) runs this same source with F5/Test Explorer
 configuration. Both editions are released from one commit; compiled EXEs need the
 new ZIP to pick up source changes. User profiles do not synchronize automatically.
+
+## Coaching and scheduled review
+
+After a game, choose Review → Analyze game → Coaching moments. Inspect up to three
+useful positions or open a related authored exercise. Practice → Adaptive practice
+prioritizes missed/due exercises and introduces progressively harder material.
+Hints and mistakes shorten the review schedule; success intervals grow to 30 days.
+Nine lessons/21 exercises include opening principles, defensive play and endings
+with either color. Long explanations scroll in native text areas.
+
+Comparison history now offers trends across saved versions, grouping only matching
+protocol-2 corpus, search budgets, seed, baseline and scoring mode. It displays
+uncertainty and cutoff draws alongside descriptive score changes. Older raw
+reports remain available. See [the full guide and limitations](GUIDED_LEARNING.md).

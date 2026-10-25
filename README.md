@@ -36,12 +36,13 @@ corrections in the supplied PDFs, regression evidence and engine limitations.
 ## What is included
 
 - A resizable board; Play AI, Two players, and Watch AI modes; hints and PGN save/load.
-- Six guided lessons, 13 built-in exercises with multi-move replies, game review, and unfinished-game recovery.
+- Nine guided lessons, 21 built-in exercises with multi-move replies, game review, and unfinished-game recovery.
 - Themes, larger text, high contrast, image/symbol/letter pieces, and keyboard play.
 - A training dashboard with checkpoints, resume, exploration, and varied openings.
 - Paired comparisons against untrained and previous versions, with uncertainty ranges.
 - Profile backup/restore with rollback, named training profiles, and comparison history.
 - FEN study, review continuations, local puzzle packs, diagnostics, and explicit update checks.
+- Coaching moments linked to related practice, spaced reviews, and comparable evaluation trends.
 - Independent evaluation positions, per-game comparison records, and recoverable training checkpoints.
 - Optional Stockfish tools, PGN conversion, and a console companion.
 

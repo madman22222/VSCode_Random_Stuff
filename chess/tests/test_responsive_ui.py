@@ -422,7 +422,7 @@ class TestResponsiveUI(unittest.TestCase):
         path = Path(__file__).resolve().parents[1] / 'assets' / 'puzzles' / 'studio-extras.json'
         with patch('studio_tools.filedialog.askopenfilename', return_value=str(path)):
             self.app._import_puzzle_pack()
-        self.assertEqual(len(self.app.puzzles), 17)
+        self.assertEqual(len(self.app.puzzles), 25)
         self.assertTrue((Path(self.tmp.name) / 'puzzle-packs' / 'studio-extras.json').exists())
         self.app.workspace.select(self.app.practice_workspace)
         self.pump()
@@ -519,7 +519,7 @@ class TestResponsiveUI(unittest.TestCase):
 
     def test_practice_tabs_and_board_remain_usable_at_tk_scaling_factors(self):
         # Synthetic Tk scaling verifies widget bounds, not a physical monitor/driver.
-        for factor in (1.0, 1.5, 2.0):
+        for factor in (1.0, 1.25, 1.5, 2.0):
             self.root.tk.call('tk', 'scaling', factor)
             self.root.geometry('1600x1000')
             self.app.workspace.select(self.app.practice_workspace)
@@ -533,3 +533,45 @@ class TestResponsiveUI(unittest.TestCase):
             view.canvases[chess.G6].event_generate('<MouseWheel>', delta=-120)
             self.pump()
             self.assertEqual(len(view.canvases), 64)
+
+    def test_review_to_coached_practice_and_adaptive_schedule_preserve_game(self):
+        from game_review import ReviewRunner
+        from coaching import coaching_moments
+        self.app.board.push_uci('e2e4'); self.app.board.push_uci('e7e5')
+        original = self.app.board.fen()
+        self.app.workspace.select(self.app.review_workspace); self.pump()
+        runner = ReviewRunner(self.app.review_board, self.app.ai, depth=1, nodes=30)
+        runner.start(); runner.thread.join(10)
+        self.assertIsNone(runner.last_error)
+        self.app.review_runner = runner
+        self.app._coaching_summary()
+        self.pump()
+        moment = coaching_moments(runner.rows)[0]
+        self.app._open_practice_id(moment['puzzle_id']); self.pump()
+        self.assertEqual(self.app.puzzles[self.app.practice_index].id, moment['puzzle_id'])
+        self.app._record_practice(False)
+        self.app._adaptive_next(); self.pump()
+        self.assertEqual(self.app.puzzles[self.app.practice_index].id, moment['puzzle_id'])
+        self.app.workspace.select(self.app.game_workspace); self.pump()
+        self.assertEqual(self.app.board.fen(), original)
+        self.assertEqual(self.app.ai.learning_db, {})
+        for window in self.root.winfo_children():
+            if isinstance(window, tk.Toplevel): window.destroy()
+
+    def test_long_practice_explanations_scroll_in_native_text_at_small_size(self):
+        self.root.geometry('980x720')
+        self.app.workspace.select(self.app.practice_workspace); self.pump()
+        self.app.practice_text.set('A long explanation with checks, captures and replies.\n' * 120)
+        self.pump()
+        texts = []
+        for child in self.app.practice_workspace.winfo_children():
+            if child.winfo_ismapped():
+                self.assertLessEqual(child.winfo_y() + child.winfo_height(), self.app.practice_workspace.winfo_height())
+            texts.extend(widget for widget in child.winfo_children() if isinstance(widget, tk.Text))
+        self.assertEqual(len(texts), 1)
+        area = texts[0]
+        for _ in range(20): area.yview_scroll(3, 'units')
+        self.pump()
+        self.assertGreater(area.yview()[0], 0)
+        self.assertEqual(len(self.app.board_view.canvases), 64)
+        self.assertEqual(self.app.board.fen(), self.app.puzzles[self.app.practice_index].fen)

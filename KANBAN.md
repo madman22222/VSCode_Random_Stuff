@@ -10,18 +10,19 @@ retroactive duplicate issues.
 
 ## Current status
 
-Updated October 25, 2026: this batch adds guided lessons, multi-move tactics,
-richer reviews, independent evaluation and recoverable training checkpoints to
-both editions. Implementation and local regression checks are complete; the
-[delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47)
-and its required source/Windows/extracted-ZIP checks provide delivery evidence.
-The board contains **52 delivered feature/planning cards**, including this batch
-once its delivery PR is merged. Historical checks remain linked in earlier PRs.
+Updated October 25, 2026: the coaching batch connects analyzed game moments to
+related practice, adds spaced reviews, expands the catalogue to nine lessons/21
+exercises, and groups comparable evaluation history. Both editions share the
+implementation. [Delivery PR #48](https://github.com/madman22222/VSCode_Random_Stuff/pull/48)
+contains validation evidence; source/desktop and both extracted-edition checks
+must pass before delivery. The board counts **56 delivered feature/planning cards**
+including these four cards once the delivery PR is merged.
 
-Local evidence: 130 regression tests (127 previously passed on the virtual desktop;
-new interruption/input cases also pass headlessly), a 100-cycle real training/resume/cancel soak, and forced process-exit
-recovery tests. Current CI must pass before merge and both ZIPs must be rebuilt
-from the same commit. These checks do not establish a playing-strength gain.
+Local validation: 142 tests pass headlessly (34 require a desktop); new cases cover
+schedules, alternatives, coaching isolation, trend compatibility and upgrading old
+preferences. CI exercises the native text scrolling and synthetic scaling at
+100/125/150/200%. Physical checks remain separate. Previous reliability evidence
+includes the 1,000-cycle training/resume/cancel run in PR #47.
 
 **Three cards remain open:** #11 needs physical Windows DPI/driver checks; #22
 needs hands-on screen-reader verification; #26 needs native package work and
@@ -33,7 +34,7 @@ See [guided learning and testing limits](chess/GUIDED_LEARNING.md), the
 
 ## Board
 
-| Backlog / verification (3) | Ready (0) | In progress (0) | Review / test (0) | Done (52) |
+| Backlog / verification (3) | Ready (0) | In progress (0) | Review / test (0) | Done (56) |
 | --- | --- | --- | --- | --- |
 | **P1** [#11 Validate Windows display scaling and small-window layouts](https://github.com/madman22222/VSCode_Random_Stuff/issues/11) — external verification pending | — | — | — | [Repair GUI startup and restore the dedicated AI/training modules](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
 | **P2** [#22 Audit keyboard navigation and assistive-technology support](https://github.com/madman22222/VSCode_Random_Stuff/issues/22) — external verification pending | — | — | — | [Fix search depth, move budgets, timeout board restoration, and evaluation errors](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
@@ -87,6 +88,10 @@ See [guided learning and testing limits](chess/GUIDED_LEARNING.md), the
 | — | — | — | — | Review continuations, tactical facts, details/export and uncertainty labels — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
 | — | — | — | — | Independent 16-position evaluation corpus with checksum, memory overlap and per-game ledger — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
 | — | — | — | — | Atomic memory/progress recovery journal, interrupted-process regressions, soak runner and compatible dependency upgrades — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
+| — | — | — | — | Link three useful review moments to related authored practice — [PR #48](https://github.com/madman22222/VSCode_Random_Stuff/pull/48) |
+| — | — | — | — | Schedule adaptive reviews from mistakes, hints and unassisted progress — [PR #48](https://github.com/madman22222/VSCode_Random_Stuff/pull/48) |
+| — | — | — | — | Expand original opening, defense and both-color endgame curriculum to nine lessons/21 exercises — [PR #48](https://github.com/madman22222/VSCode_Random_Stuff/pull/48) |
+| — | — | — | — | Compare compatible saved versions with baseline identity, uncertainty and separated settings — [PR #48](https://github.com/madman22222/VSCode_Random_Stuff/pull/48) |
 
 ## Priorities and recommended order
 

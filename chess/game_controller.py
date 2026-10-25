@@ -25,6 +25,7 @@ from studio_features import StudioFeatures
 from studio_tools import StudioTools
 from training_controls import TrainingControls
 from practice_controls import PracticeControls
+from coaching_controls import CoachingControls
 from game_endings import GameEndings, Conclusion, EndReason, timeout_conclusion
 from app_paths import data_dir, resource_dir, training_command
 from tools.batch_pgn_converter import batch_convert
@@ -76,7 +77,7 @@ class Tooltip:
 HAS_UPGRADES = True
 
 
-class GameController(PracticeControls, GameEndings, TrainingControls, StudioTools, StudioFeatures):
+class GameController(CoachingControls, PracticeControls, GameEndings, TrainingControls, StudioTools, StudioFeatures):
     """Coordinates the GUI view, AI, and engine manager.
 
     This class owns the game state and provides callbacks for UI events.
@@ -993,6 +994,7 @@ class GameController(PracticeControls, GameEndings, TrainingControls, StudioTool
                     if self.config:
                         self.config.update_statistics(result)
                     self._learn_finalized = True
+                    self.feedback_var.set('Game finished. Open Review → Analyze game → Coaching moments for related practice.')
                     # Auto-save PGN if enabled
                     try:
                         if bool(self.autosave_pgn_var.get() if hasattr(self, 'autosave_pgn_var') else False) and not getattr(self, '_autosave_done', False):
