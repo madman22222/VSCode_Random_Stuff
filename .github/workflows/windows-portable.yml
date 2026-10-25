@@ -73,6 +73,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           tag="windows-${GITHUB_RUN_NUMBER}-${GITHUB_SHA:0:7}"
-          gh release create "$tag" dist/ChessStudio-Windows.zip dist/ChessStudio-Windows.zip.sha256 dist/ChessStudio-Windows.build-info.json dist/ChessStudio-VSCode.zip dist/ChessStudio-VSCode.zip.sha256 \
+          gh release create "$tag" --draft \
             --target "$GITHUB_SHA" --title "Chess Studio - Windows and VS Code" \
-            --notes-file packaging/release-notes.md --latest
+            --notes-file packaging/release-notes.md
+          gh release upload "$tag" dist/ChessStudio-Windows.zip dist/ChessStudio-Windows.zip.sha256 dist/ChessStudio-Windows.build-info.json dist/ChessStudio-VSCode.zip dist/ChessStudio-VSCode.zip.sha256
+          gh release edit "$tag" --draft=false --latest
