@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.10, 3.11]
+        python-version: ["3.10", "3.11"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -31,12 +31,8 @@ jobs:
         with:
           name: metrics-sample-${{ matrix.python-version }}
           path: metrics_sample.csv
-      - name: Run tests with coverage (discovery)
-        run: |
-          coverage run -m unittest discover -v chess/tests
-      - name: Run explicit test modules (fallback)
-        run: |
-          coverage run -a -m unittest -v chess.tests.test_game_controller chess.tests.test_special_moves
+      - name: Run tests with coverage
+        run: coverage run run_tests.py
       - name: Generate coverage reports
         run: |
           coverage xml || true
@@ -44,7 +40,7 @@ jobs:
           coverage report -m > coverage.txt || true
       - name: Save test output & coverage summary
         run: |
-          python -m unittest -v chess.tests.test_game_controller chess.tests.test_special_moves > test-results.txt 2>&1
+          python run_tests.py > test-results.txt 2>&1
       - name: Enforce coverage threshold
         run: |
           coverage report --fail-under=35

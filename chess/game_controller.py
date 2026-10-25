@@ -12,13 +12,10 @@ This module provides a complete chess GUI application with:
 - PGN save/load functionality
 
 Architecture:
-- SimpleAI: Chess engine with evaluation, search algorithms, and learning
-- GameController: GUI coordinator handling user input, AI threading, and UI updates
-- BoardView: Visual chess board with drag-drop and animations
-- ConfigManager, SoundManager, ChessClock: Optional feature modules
+- SimpleAI and TrainingAI are imported from their dedicated modules.
+- GameController coordinates the desktop UI, board and optional UCI engine.
 """
 
-import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from typing import Optional
@@ -27,1019 +24,46 @@ from simple_ai import SimpleAI
 from training_ai import TrainingAI
 from engine_manager import EngineManager
 from engine_adapter import EngineAdapter
-    KING_MIDDLEGAME_TABLE = [
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -20,-30,-30,-40,-40,-30,-30,-20,
-        -10,-20,-20,-20,-20,-20,-20,-10,
-        20, 20,  0,  0,  0,  0, 20, 20,
-        20, 30, 10,  0,  0, 10, 30, 20
-    ]
-    
-    KING_ENDGAME_TABLE = [
-        -50,-40,-30,-20,-20,-30,-40,-50,
-        -30,-20,-10,  0,  0,-10,-20,-30,
-        -30,-10, 20, 30, 30, 20,-10,-30,
-        -30,-10, 30, 40, 40, 30,-10,-30,
-        -30,-10, 30, 40, 40, 30,-10,-30,
-        -30,-10, 20, 30, 30, 20,-10,-30,
-        -30,-30,  0,  0,  0,  0,-30,-30,
-        -50,-30,-30,-30,-30,-30,-30,-50
-    ]
-    
-    # Opening book: maps starting positions (FEN) to good opening moves (UCI notation)
-    # Helps AI play reasonable openings before deep search is feasible
-    # FEN format: piece placement, side to move, castling rights, en passant, halfmove, fullmove
-    OPENING_BOOK = {
-        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1": ["e2e4", "d2d4", "c2c4", "g1f3"],  # Starting position
-        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1": ["e7e5", "c7c5", "e7e6", "c7c6"],  # After 1.e4
-        "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2": ["g1f3", "f1c4", "b1c3"],  # After 1.e4 e5
-        "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2": ["b8c6", "g8f6"],  # After 1.e4 e5 2.Nf3
-        "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1": ["g8f6", "d7d5", "e7e6"],  # After 1.d4
-        "rnbqkb1r/pppppppp/5n2/8/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 1 2": ["c2c4", "g1f3"],  # After 1.d4 Nf6
-    }
 
-    def __init__(self, depth=3):
-        """
-        Initialize the AI engine.
-        
-        Args:
-            depth: Maximum search depth (ply). Higher = stronger but slower.
-                   Typical values: 3-6. Each +1 roughly 3-5x slower.
-        """
-        self.depth = depth
-        self.nodes_searched = 0  # Counter for performance analysis
-        
-        # Transposition table: cache evaluated positions to avoid re-searching
-        # Key: board FEN string
-        # Value: (score, depth_searched, bound_flag, best_move_uci)
-        # Bound flags: 'EXACT' (= real value), 'LOWER' (>=), 'UPPER' (<=)
-        self.transposition_table: dict = {}
-        
-        # Killer moves: non-capture moves that caused beta cutoffs at each depth
-        # Key: depth (int), Value: list of up to 2 move UCIs
-        # Tried early in move ordering since they often cause cutoffs again
-        self.killers: dict[int, list[str]] = {}
-        
-        # History heuristic: rewards moves that historically caused beta cutoffs
-        # Key: move UCI, Value: accumulated score (depth^2 per cutoff)
-        self.history: dict[str, int] = {}
-        
-        # Learning database: persistent memory of past game outcomes
-        # Key: "fen_position|move_uci", Value: {"w": wins, "l": losses, "d": draws}
-        self.learning_db: dict = {}
-        
-        # Per-game log: accumulates choices made this game for learning update on game end
-        # Each entry: (fen_key, move_uci, color_to_move_bool)
-        self.game_log: list[tuple[str, str, bool]] = []
-        
-        # Path to persistent learning file
-        self._learning_path = os.path.join(os.path.dirname(__file__), 'ai_learn.json')
-        self._learning_path_gz = self._learning_path + '.gz'
-        self._load_learning_db()
-        
-        # Toggle for learning bias in move ordering
-        self.use_learning = True
+import os
+import time
+import threading
+import shutil
+import csv
+import chess.pgn
+from PIL import Image, ImageTk
+from board_view import BoardView
+from constants import THEMES
+from config_manager import ConfigManager
+from sound_manager import SoundManager
+from chess_clock import ChessClock
+import image_generator
 
-        # Training persistence and storage controls
-        # When defer_persistence is True, finalize_game will batch disk writes
-        self.defer_persistence: bool = False
-        self.persist_every_n: int = 100
-        self._pending_games: int = 0
-        # Skip readable export during training batches by default
-        self.export_readable_during_training: bool = False
-        # Compress learning file to save disk space (writes ai_learn.json.gz)
-        self.compress_learning: bool = True
+class Tooltip:
+    def __init__(self, widget, text):
+        self.window = None
+        self.widget = widget
+        self.text = text
+        widget.bind('<Enter>', self.show)
+        widget.bind('<Leave>', self.hide)
+        widget.bind('<Destroy>', self.hide)
 
-    # ==================== Learning System ====================
-    # These methods handle persistent learning across games
-    
-    def _load_learning_db(self) -> None:
-        """Load the learning database from disk (if it exists)."""
-        try:
-            import json, gzip
-            data = None
-            # Prefer compressed file if available
-            if os.path.exists(self._learning_path_gz):
-                with gzip.open(self._learning_path_gz, 'rt', encoding='utf-8') as f:
-                    data = json.load(f)
-            elif os.path.exists(self._learning_path):
-                with open(self._learning_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        self.learning_db = data
-            # If we loaded from uncompressed file but compression is enabled, migrate on next save
-        except Exception:
-            # If file corrupt or missing, start with empty database
-            self.learning_db = {}
+    def show(self, event=None):
+        if self.window is not None:
+            return
+        self.window = tk.Toplevel(self.widget)
+        self.window.wm_overrideredirect(True)
+        self.window.geometry(f'+{self.widget.winfo_rootx() + 15}+{self.widget.winfo_rooty() + 25}')
+        tk.Label(self.window, text=self.text, wraplength=300,
+                 background='#fff9c4', relief='solid', borderwidth=1).pack()
 
-    def _save_learning_db(self) -> None:
-        """Persist the learning database to disk."""
-        try:
-            import json, gzip
-            if getattr(self, 'compress_learning', False):
-                # Write compressed
-                with gzip.open(self._learning_path_gz, 'wt', encoding='utf-8') as f:
-                    json.dump(self.learning_db, f, separators=(',', ':'), ensure_ascii=False)
-                # Try to remove uncompressed file to save space
-                try:
-                    if os.path.exists(self._learning_path):
-                        os.remove(self._learning_path)
-                except Exception:
-                    pass
-            else:
-                with open(self._learning_path, 'w', encoding='utf-8') as f:
-                    json.dump(self.learning_db, f, separators=(',', ':'), ensure_ascii=False)
-        except Exception:
-            pass  # Silently fail to avoid disrupting gameplay
-
-    def _log_choice(self, fen_key: str, move_uci: str, color_to_move: bool) -> None:
-        """
-        Record an AI move choice for later learning update.
-        
-        Args:
-            fen_key: Position (piece placement part of FEN)
-            move_uci: Move in UCI notation (e.g., 'e2e4')
-            color_to_move: True if white to move, False if black
-        """
-        try:
-            self.game_log.append((fen_key, move_uci, color_to_move))
-        except Exception:
-            pass
-
-    def finalize_game(self, result: str) -> None:
-        """
-        Apply game outcome to all logged moves, updating learning database.
-        
-        Called once per game after checkmate/stalemate/insufficient material.
-        Updates win/loss/draw counts for each (position, move) pair.
-        
-        Args:
-            result: 'white', 'black', or 'draw' — indicates winner
-        """
-        try:
-            if not self.game_log:
-                return
-            
-            # Process each logged move from this game
-            for fen_key, move_uci, color_to_move in self.game_log:
-                key = fen_key + '|' + move_uci  # Combined key for database lookup
-                rec = self.learning_db.get(key) or {"w": 0, "l": 0, "d": 0}
-                
-                # Update counts based on result
-                if result == 'draw':
-                    rec["d"] = rec.get("d", 0) + 1  # Increment draw count
-                else:
-                    winner_is_white = (result == 'white')
-                    # If the side that made this move won, it's a win; otherwise a loss
-                    if winner_is_white == color_to_move:
-                        rec["w"] = rec.get("w", 0) + 1
-                    else:
-                        rec["l"] = rec.get("l", 0) + 1
-                self.learning_db[key] = rec
-            
-            # Clear the game log for next game
-            self.game_log = []
-            
-            # Persist to disk (batched if training mode defers persistence)
-            if getattr(self, 'defer_persistence', False):
-                # Batch persistence for speed during training
-                self._pending_games = int(getattr(self, '_pending_games', 0)) + 1
-                threshold = int(getattr(self, 'persist_every_n', 100))
-                if self._pending_games >= max(1, threshold):
-                    self._save_learning_db()
-                    # Optionally export readable file during training batches
-                    if bool(getattr(self, 'export_readable_during_training', False)):
-                        try:
-                            self.export_readable_learning()
-                        except Exception:
-                            pass
-                    self._pending_games = 0
-            else:
-                # Default behavior: save and export after every game
-                self._save_learning_db()
-                try:
-                    self.export_readable_learning()
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    def export_readable_learning(self, path: 'Optional[str]' = None) -> 'Optional[str]':
-        """
-        Export learning database to a human-readable JSON file.
-        
-        Creates a file with:
-        - Metadata (version, timestamp, counts)
-        - Positions grouped by FEN
-        - For each move: wins, losses, draws, games, winrate, and ordering bonus
-        
-        The ordering_bonus shows the exact value (+/- centipawns) the AI adds
-        to move ordering for that (position, move) pair.
-        
-        Args:
-            path: Optional custom save path. Defaults to ai_learn_readable.json
-            
-        Returns:
-            Path to saved file, or None on error
-        """
-        try:
-            import json, time
-            
-            # Aggregate raw database into positions -> moves structure
-            positions: dict[str, dict] = {}
-            for key, rec in self.learning_db.items():
-                if '|' not in key:
-                    continue  # Skip malformed keys
-                    
-                fen_key, move_uci = key.split('|', 1)
-                entry = positions.setdefault(fen_key, {"moves": {}})
-                entry["moves"][move_uci] = {
-                    "wins": int(rec.get('w', 0)),
-                    "losses": int(rec.get('l', 0)),
-                    "draws": int(rec.get('d', 0)),
-                }
-            
-            # Compute derived statistics (games, winrate, ordering bonus)
-            total_positions = 0
-            total_entries = 0
-            for fen_key, entry in positions.items():
-                moves = entry.get("moves", {})
-                for mv, r in moves.items():
-                    games = r["wins"] + r["losses"] + r["draws"]
-                    r["games"] = games
-                    # Winrate: wins + 0.5*draws (treating draws as half-wins)
-                    r["winrate"] = 0.0 if games == 0 else round((r["wins"] + 0.5 * r["draws"]) / games, 3)
-                    # Ordering bonus: scaled from -100 to +100 based on winrate deviation from 50%
-                    r["ordering_bonus"] = int((r["winrate"] - 0.5) * 200)
-                    total_entries += 1
-                total_positions += 1
-            
-            # Build final output with metadata
-            blob = {
-                "meta": {
-                    "version": 1,
-                    "updated": time.strftime('%Y-%m-%d %H:%M:%S'),
-                    "total_positions": total_positions,
-                    "total_entries": total_entries,
-                    "notes": "AI uses these stats to slightly bias move ordering; this does not change evaluation.",
-                },
-                "positions": positions,
-            }
-            
-            out_path = path or os.path.join(os.path.dirname(self._learning_path), 'ai_learn_readable.json')
-            with open(out_path, 'w', encoding='utf-8') as f:
-                # Minified to reduce size; still viewable
-                json.dump(blob, f, separators=(',', ':'), ensure_ascii=False)
-            return out_path
-        except Exception:
-            return None
-
-    def _learn_bonus(self, fen_key: str, move_uci: str) -> int:
-        """
-        Calculate move ordering bonus from learned statistics.
-        
-        Returns a small integer bonus (+/- ~100) based on the historical
-        success rate of this move in this position. Moves that led to more
-        wins get positive bonuses; moves that led to losses get penalties.
-        
-        This does NOT change the evaluation function—it only influences the
-        order in which moves are tried, which can speed up alpha-beta pruning.
-        
-        Args:
-            fen_key: Position (piece placement from FEN)
-            move_uci: Move in UCI notation
-            
-        Returns:
-            Ordering bonus in centipawns (typically -100 to +100)
-        """
-        try:
-            rec = self.learning_db.get(fen_key + '|' + move_uci)
-            if not rec:
-                return 0  # No learning data for this position/move
-                
-            w = int(rec.get('w', 0))
-            l = int(rec.get('l', 0))
-            d = int(rec.get('d', 0))
-            tot = w + l + d
-            if tot == 0:
-                return 0  # No games recorded yet
-                
-            # Calculate winrate (0.0 to 1.0), treating draws as 0.5
-            rating = (w + 0.5 * d) / tot
-            
-            # Scale to bonus: -100 (0% winrate) to +100 (100% winrate)
-            # 50% winrate = 0 bonus (neutral)
-            bonus = int((rating - 0.5) * 200)
-            return bonus
-        except Exception:
-            return 0
-
-    # ==================== Evaluation Functions ====================
-    
-    def game_phase(self, board: chess.Board) -> int:
-        """
-        Determine current game phase for tapered evaluation.
-        
-        Different phases use different strategies:
-        - Opening: book moves, rapid development
-        - Middlegame: king safety critical, aggressive piece placement
-        - Endgame: king should be active, pawns become more valuable
-        
-        Returns:
-            0 = Opening (< 10 moves)
-            1 = Middlegame (normal material)
-            2 = Endgame (≤ 6 minor/major pieces total)
-        """
-        # Count non-pawn pieces (queens, rooks, bishops, knights)
-        total_material = sum(len(board.pieces(pt, chess.WHITE)) + len(board.pieces(pt, chess.BLACK)) 
-                            for pt in [chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT])
-        
-        if len(board.move_stack) < 10:
-            return 0  # Opening: first 10 moves
-        elif total_material <= 6:  # Few pieces left (endgame threshold)
-            return 2  # Endgame
-        else:
-            return 1  # Middlegame
-
-    def get_piece_square_value(self, piece: chess.Piece, square: int, phase: int) -> int:
-        """
-        Get positional bonus/penalty for a piece on a specific square.
-        
-        Uses piece-square tables to encourage good piece placement:
-        - Pawns: advance toward promotion
-        - Knights: centralize
-        - Bishops: control long diagonals
-        - Rooks: open files and 7th rank
-        - Queens: flexible but avoid early development
-        - Kings: castle in middlegame, activate in endgame
-        
-        Args:
-            piece: Chess piece (type and color)
-            square: Square index (0-63, a1=0, h8=63)
-            phase: Game phase (0=opening, 1=middlegame, 2=endgame)
-            
-        Returns:
-            Bonus in centipawns (can be negative for bad squares)
-        """
-        # Mirror square for black pieces (tables are from white's perspective)
-        sq = square if piece.color == chess.WHITE else chess.square_mirror(square)
-        
-        if piece.piece_type == chess.PAWN:
-            return self.PAWN_TABLE[sq]
-        elif piece.piece_type == chess.KNIGHT:
-            return self.KNIGHT_TABLE[sq]
-        elif piece.piece_type == chess.BISHOP:
-            return self.BISHOP_TABLE[sq]
-        elif piece.piece_type == chess.ROOK:
-            return self.ROOK_TABLE[sq]
-        elif piece.piece_type == chess.QUEEN:
-            return self.QUEEN_TABLE[sq]
-        elif piece.piece_type == chess.KING:
-            if phase == 2:  # Endgame
-                return self.KING_ENDGAME_TABLE[sq]
-            else:
-                return self.KING_MIDDLEGAME_TABLE[sq]
-        return 0
-
-    def evaluate(self, board: chess.Board) -> int:
-        """Enhanced evaluation with material, position, mobility, king safety, and pawn structure"""
-        if board.is_checkmate():
-            return -20000 if board.turn == chess.WHITE else 20000
-        if board.is_stalemate() or board.is_insufficient_material():
-            return 0
-        
-        phase = self.game_phase(board)
-        score = 0
-        
-        # Material and positional values
-        for square in chess.SQUARES:
-            piece = board.piece_at(square)
-            if piece:
-                value = self.PIECE_VALUES[piece.piece_type]
-                pos_value = self.get_piece_square_value(piece, square, phase)
-                if piece.color == chess.WHITE:
-                    score += value + pos_value
-                else:
-                    score -= value + pos_value
-        
-        # Mobility (piece activity)
-        score += self.evaluate_mobility(board)
-        
-        # King safety
-        score += self.evaluate_king_safety(board, chess.WHITE, phase)
-        score -= self.evaluate_king_safety(board, chess.BLACK, phase)
-        
-        # Pawn structure
-        score += self.evaluate_pawn_structure(board, chess.WHITE)
-        score -= self.evaluate_pawn_structure(board, chess.BLACK)
-        
-        # Bishop pair bonus
-        if len(board.pieces(chess.BISHOP, chess.WHITE)) >= 2:
-            score += 30
-        if len(board.pieces(chess.BISHOP, chess.BLACK)) >= 2:
-            score -= 30
-        
-        return score if board.turn == chess.WHITE else -score
-
-    def evaluate_mobility(self, board: chess.Board) -> int:
-        """Evaluate piece mobility (number of legal moves)"""
-        current_turn = board.turn
-        
-        board.turn = chess.WHITE
-        white_mobility = board.legal_moves.count()
-        
-        board.turn = chess.BLACK  
-        black_mobility = board.legal_moves.count()
-        
-        board.turn = current_turn
-        
-        return (white_mobility - black_mobility) * 3
-
-    def evaluate_king_safety(self, board: chess.Board, color: bool, phase: int) -> int:
-        """Evaluate king safety based on game phase"""
-        if phase == 2:  # Endgame - king should be active
-            return 0
-        
-        score = 0
-        king_square = board.king(color)
-        if king_square is None:
-            return 0
-        
-        king_file = chess.square_file(king_square)
-        king_rank = chess.square_rank(king_square)
-        
-        # Penalize king in center during middlegame
-        if phase == 1:
-            if 2 <= king_file <= 5:
-                score -= 40
-        
-        # Bonus for castled position
-        if color == chess.WHITE:
-            if king_square in [chess.G1, chess.C1]:
-                score += 50
-                # Bonus for pawn shield
-                if king_square == chess.G1:
-                    f2_piece = board.piece_at(chess.F2)
-                    if f2_piece and f2_piece.piece_type == chess.PAWN:
-                        score += 10
-                    g2_piece = board.piece_at(chess.G2)
-                    if g2_piece and g2_piece.piece_type == chess.PAWN:
-                        score += 10
-                    h2_piece = board.piece_at(chess.H2)
-                    if h2_piece and h2_piece.piece_type == chess.PAWN:
-                        score += 10
-        else:
-            if king_square in [chess.G8, chess.C8]:
-                score += 50
-                if king_square == chess.G8:
-                    f7_piece = board.piece_at(chess.F7)
-                    if f7_piece and f7_piece.piece_type == chess.PAWN:
-                        score += 10
-                    g7_piece = board.piece_at(chess.G7)
-                    if g7_piece and g7_piece.piece_type == chess.PAWN:
-                        score += 10
-                    h7_piece = board.piece_at(chess.H7)
-                    if h7_piece and h7_piece.piece_type == chess.PAWN:
-                        score += 10
-        
-        return score
-
-    def evaluate_pawn_structure(self, board: chess.Board, color: bool) -> int:
-        """Evaluate pawn structure: passed pawns, doubled pawns, isolated pawns"""
-        score = 0
-        pawns = board.pieces(chess.PAWN, color)
-        
-        for pawn_square in pawns:
-            pawn_file = chess.square_file(pawn_square)
-            pawn_rank = chess.square_rank(pawn_square)
-            
-            # Check for passed pawn
-            if self.is_passed_pawn(board, pawn_square, color):
-                # More valuable closer to promotion
-                if color == chess.WHITE:
-                    score += 20 + (pawn_rank * 10)
-                else:
-                    score += 20 + ((7 - pawn_rank) * 10)
-            
-            # Check for doubled pawns
-            same_file = [sq for sq in pawns if chess.square_file(sq) == pawn_file]
-            if len(same_file) > 1:
-                score -= 15
-            
-            # Check for isolated pawns
-            if self.is_isolated_pawn(board, pawn_square, color):
-                score -= 20
-            
-            # Check for backward pawns
-            if self.is_backward_pawn(board, pawn_square, color):
-                score -= 10
-        
-        return score
-
-    def is_passed_pawn(self, board: chess.Board, square: int, color: bool) -> bool:
-        """Check if pawn is passed (no enemy pawns ahead)"""
-        pawn_file = chess.square_file(square)
-        pawn_rank = chess.square_rank(square)
-        
-        enemy_color = not color
-        enemy_pawns = board.pieces(chess.PAWN, enemy_color)
-        
-        for enemy_pawn in enemy_pawns:
-            ep_file = chess.square_file(enemy_pawn)
-            ep_rank = chess.square_rank(enemy_pawn)
-            
-            # Check if enemy pawn is in front or adjacent files
-            if abs(ep_file - pawn_file) <= 1:
-                if color == chess.WHITE and ep_rank > pawn_rank:
-                    return False
-                if color == chess.BLACK and ep_rank < pawn_rank:
-                    return False
-        
-        return True
-
-    def is_isolated_pawn(self, board: chess.Board, square: int, color: bool) -> bool:
-        """Check if pawn has no friendly pawns on adjacent files"""
-        pawn_file = chess.square_file(square)
-        friendly_pawns = board.pieces(chess.PAWN, color)
-        
-        for friendly_pawn in friendly_pawns:
-            if friendly_pawn != square:
-                fp_file = chess.square_file(friendly_pawn)
-                if abs(fp_file - pawn_file) == 1:
-                    return False
-        
-        return True
-
-    def is_backward_pawn(self, board: chess.Board, square: int, color: bool) -> bool:
-        """Check if pawn is behind all friendly pawns on adjacent files"""
-        pawn_file = chess.square_file(square)
-        pawn_rank = chess.square_rank(square)
-        friendly_pawns = board.pieces(chess.PAWN, color)
-        
-        for friendly_pawn in friendly_pawns:
-            if friendly_pawn != square:
-                fp_file = chess.square_file(friendly_pawn)
-                fp_rank = chess.square_rank(friendly_pawn)
-                
-                if abs(fp_file - pawn_file) == 1:
-                    if color == chess.WHITE and fp_rank < pawn_rank:
-                        return True
-                    if color == chess.BLACK and fp_rank > pawn_rank:
-                        return True
-        
-        return False
-
-    def quiescence(self, board: chess.Board, alpha: int, beta: int) -> int:
-        """
-        Quiescence search: extends search to stable positions to avoid horizon effect.
-        
-        The "horizon effect" is when the engine stops searching mid-combination,
-        giving a false evaluation. For example:
-        - Engine searches to depth 4 and sees "I can win a queen!"
-        - But at depth 5, the opponent recaptures with check
-        - Without quiescence, engine only sees the queen capture, not the recapture
-        
-        Solution: At depth 0, keep searching until position is "quiet" (no captures).
-        Only tactical moves (captures) are searched, not all moves.
-        
-        This is much cheaper than full search because:
-        1. Only ~5-10% of legal moves are captures
-        2. We stop as soon as position stabilizes (stand_pat evaluation)
-        
-        Args:
-            board: Current position
-            alpha, beta: Alpha-beta bounds
-            
-        Returns:
-            Evaluation score when position is stable
-        """
-        # ===== STAND-PAT EVALUATION =====
-        # Evaluate current position without any moves
-        # If this is already good enough (>= beta), we can stop
-        stand_pat = self.evaluate(board)
-        
-        if stand_pat >= beta:
-            return beta  # Beta cutoff: position is too good, prune
-        if alpha < stand_pat:
-            alpha = stand_pat  # Update alpha if current position is better
-        
-        # ===== CAPTURE-ONLY SEARCH =====
-        # Generate only capture moves (tactical)
-        capture_moves = [move for move in board.legal_moves if board.is_capture(move)]
-        # Sort by MVV-LVA (Most Valuable Victim - Least Valuable Attacker)
-        # Try queen captures before pawn captures
-        capture_moves.sort(key=lambda m: self._move_score(board, m), reverse=True)
-        
-        for move in capture_moves:
-            board.push(move)
-            score = -self.quiescence(board, -beta, -alpha)  # Recursive quiescence
-            board.pop()
-            
-            if score >= beta:
-                return beta  # Beta cutoff
-            if score > alpha:
-                alpha = score  # Improved lower bound
-        
-        return alpha  # Best score found in quiescence
-
-    def negamax(self, board: chess.Board, depth: int, alpha: int, beta: int) -> int:
-        """
-        Negamax search with alpha-beta pruning, PVS, and LMR.
-        
-        This is the core search function that explores the game tree to find the best move.
-        
-        Key optimizations:
-        1. Transposition Table: Avoids re-searching positions we've seen before
-        2. Principal Variation Search (PVS): Most of the tree is searched with a null window
-        3. Late Move Reductions (LMR): Less promising moves are searched at reduced depth
-        
-        Args:
-            board: Current position to evaluate
-            depth: How many more plies (half-moves) to search
-            alpha: Lower bound (best score we can guarantee for the side to move)
-            beta: Upper bound (opponent's best alternative elsewhere)
-            
-        Returns:
-            Score in centipawns from the perspective of the side to move
-            (positive = good for current player, negative = good for opponent)
-        """
-        # ===== TRANSPOSITION TABLE PROBE =====
-        # Check if we've already searched this position
-        fen = board.fen()
-        if fen in self.transposition_table:
-            t_score, t_depth, t_flag, _ = self.transposition_table[fen]
-            # Only use cached score if it was searched at equal/greater depth
-            if t_depth >= depth:
-                # EXACT: score is accurate, no need to search
-                if t_flag == 'EXACT':
-                    return t_score
-                # LOWER: real score is at least t_score (caused beta cutoff)
-                # If cached lower bound exceeds beta, we'll cut off again
-                if t_flag == 'LOWER' and t_score >= beta:
-                    return t_score
-                # UPPER: real score is at most t_score (all moves failed low)
-                # If cached upper bound is below alpha, it won't improve
-                if t_flag == 'UPPER' and t_score <= alpha:
-                    return t_score
-
-        # ===== TERMINAL NODE CHECKS =====
-        if board.is_game_over():
-            if board.is_checkmate():
-                score = -9999999  # Opponent wins (we're checkmated)
-            else:
-                score = 0  # Draw (stalemate or insufficient material)
-            self.transposition_table[fen] = (score, depth, 'EXACT', None)
-            return score
-        
-        # ===== DEPTH LIMIT REACHED: QUIESCENCE SEARCH =====
-        # At depth 0, we don't stop immediately—we search tactical moves to avoid
-        # the "horizon effect" (e.g., stopping mid-capture sequence)
-        if depth == 0:
-            score = self.quiescence(board, alpha, beta)
-            self.transposition_table[fen] = (score, depth, 'EXACT', None)
-            return score
-
-        # ===== MOVE GENERATION AND ORDERING =====
-        max_score = -9999999
-        best_move = None
-        moves = list(board.legal_moves)
-        # Good move ordering is critical: if we search the best move first,
-        # we'll get more alpha-beta cutoffs (pruning the rest of the tree)
-        moves = self._order_moves(board, moves, depth)
-
-        # ===== MAIN SEARCH LOOP =====
-        orig_alpha = alpha  # Remember original alpha to determine bound flag
-        for idx, move in enumerate(moves):
-            # First move is the Principal Variation (PV) — most likely best
-            pv = (idx == 0)
-            
-            # Pre-compute move properties for LMR logic
-            try:
-                is_capture = board.is_capture(move)
-                gives_check = board.gives_check(move)
-            except Exception:
-                # Rare: board might be in an unexpected state
-                is_capture = False
-                gives_check = False
-                
-            board.push(move)
-            
-            if pv:
-                # ===== PV NODE: FULL-WINDOW SEARCH =====
-                # First move gets the full alpha-beta window because it's most likely best
-                score = -self.negamax(board, depth - 1, -beta, -alpha)
-            else:
-                # ===== NON-PV NODES: PRINCIPAL VARIATION SEARCH (PVS) =====
-                # Other moves are searched with a "null window" (alpha, alpha+1)
-                # This is much faster because the window is tiny, causing quick cutoffs
-                
-                # Late Move Reductions (LMR):
-                # Moves searched late are less likely to be good (we ordered them poorly)
-                # So we search them at reduced depth first to save time
-                reduction = 0
-                if depth >= 3 and not is_capture and not gives_check and move.promotion is None:
-                    # Only reduce "quiet" moves (non-tactical) after the first few
-                    if idx >= 4:
-                        reduction = 1  # Conservative: only reduce by 1 ply
-                        
-                d2 = max(1, depth - 1 - reduction)
-                
-                # Null-window search (PVS) with possibly reduced depth (LMR)
-                score = -self.negamax(board, d2, -(alpha + 1), -alpha)
-                
-                # If the null-window search suggests this move is better than we thought...
-                if score > alpha:
-                    # Re-search with full window and full depth to get accurate score
-                    # This "fail-soft" behavior ensures we don't miss good moves
-                    score = -self.negamax(board, depth - 1, -beta, -alpha)
-                    
-            board.pop()
-            
-            # ===== UPDATE BEST SCORE =====
-            if score > max_score:
-                max_score = score
-                best_move = move
-                
-            # ===== ALPHA-BETA PRUNING =====
-            alpha = max(alpha, score)
-            if alpha >= beta:
-                # Beta cutoff: This position is too good; opponent won't let us reach it
-                # (They have a better option earlier in the tree)
-                
-                # Record this move as a "killer" and bump its history score
-                # so we'll try it first in sibling positions
-                self._store_killer(depth, move)
-                self._bump_history(move, depth)
-                break  # Prune the rest of the moves
-        
-        # ===== TRANSPOSITION TABLE STORAGE =====
-        # Store the result with a flag indicating what we learned:
-        # - EXACT: we searched all moves and found the true score
-        # - UPPER: all moves were <= orig_alpha (fail-low, no improvement)
-        # - LOWER: at least one move was >= beta (fail-high, caused cutoff)
-        flag = 'EXACT'
-        if max_score <= orig_alpha:
-            flag = 'UPPER'  # Real score could be lower, but at most max_score
-        elif max_score >= beta:
-            flag = 'LOWER'  # Real score could be higher, but at least max_score
-            
-        self.transposition_table[fen] = (max_score, depth, flag, best_move.uci() if best_move else None)
-        return max_score
-
-    def choose_move(self, board: chess.Board) -> 'Optional[chess.Move]':
-        """
-        Choose the best move using iterative deepening with aspiration windows.
-        
-        Iterative Deepening:
-        - Searches depth 1, then depth 2, then depth 3, etc., up to self.depth
-        - Each iteration uses results from previous depth to improve move ordering
-        - Provides best move so far even if time runs out (anytime algorithm)
-        
-        Aspiration Windows:
-        - Instead of searching with infinite bounds (-∞, +∞), use narrow window
-        - Window is centered around previous depth's score
-        - Much faster due to more alpha-beta cutoffs
-        - If search fails outside window, widen and re-search
-        
-        Returns:
-            Best move found, or None if no legal moves (shouldn't happen)
-        """
-        # ===== OPENING BOOK CHECK =====
-        # Check if current position is in our opening book (common opening lines)
-        position_fen = board.fen().split(' ')[0]  # Just piece placement, ignore turn/castling
-        if position_fen in self.OPENING_BOOK:
-            book_moves = self.OPENING_BOOK[position_fen]
-            # Filter for legal moves in case book has illegal entries
-            legal_book_moves = [mv for mv in book_moves if mv in [m.uci() for m in board.legal_moves]]
-            if legal_book_moves:
-                # Play a random move from the book to add variety
-                return chess.Move.from_uci(random.choice(legal_book_moves))
-
-        # ===== ITERATIVE DEEPENING LOOP =====
-        best_move = None
-        prev_score = 0  # Score from previous depth iteration
-        
-        for d in range(1, max(1, self.depth) + 1):
-            # ===== ASPIRATION WINDOW SETUP =====
-            # Window width grows slightly with depth (deeper = less accurate prev_score)
-            window = 30 + d * 10  # e.g., depth 1: ±40, depth 4: ±70
-            
-            # Set alpha/beta bounds around previous score, clamped to valid range
-            alpha = max(-9999999, prev_score - window)
-            beta = min(9999999, prev_score + window)
-            
-            # ===== ASPIRATION SEARCH =====
-            # Try searching with narrow window first
-            move_d, score_d = self._search_root(board, d, alpha, beta)
-            
-            # ===== HANDLE ASPIRATION FAILURES =====
-            # Fail-low: score <= alpha (position is worse than expected)
-            if move_d is not None and score_d <= alpha:
-                # Re-search with alpha = -∞ to find true score
-                move_d, score_d = self._search_root(board, d, -9999999, beta)
-                
-            # Fail-high: score >= beta (position is better than expected)
-            elif move_d is not None and score_d >= beta:
-                # Re-search with beta = +∞ to find true score
-                move_d, score_d = self._search_root(board, d, alpha, 9999999)
-                
-            # ===== UPDATE BEST MOVE =====
-            if move_d is not None:
-                best_move, prev_score = move_d, score_d
-                
-        # ===== LOG CHOICE FOR LEARNING =====
-        # Record the final chosen move so we can update statistics after the game
-        try:
-            if best_move is not None:
-                fen_key = board.fen().split(' ')[0]  # Position (piece placement only)
-                self._log_choice(fen_key, best_move.uci(), board.turn)
-        except Exception:
-            pass  # Don't let logging errors disrupt gameplay
-            
-        return best_move
-
-    def _search_root(self, board: chess.Board, depth: int, alpha: int, beta: int) -> tuple['Optional[chess.Move]', int]:
-        """Root search with PVS and TT storage; returns (best_move, score)."""
-        best_move: 'Optional[chess.Move]' = None
-        max_score = -9999999
-        fen = board.fen()
-        moves = list(board.legal_moves)
-        moves = self._order_moves(board, moves, depth)
-        orig_alpha = alpha
-        for idx, move in enumerate(moves):
-            board.push(move)
-            if idx == 0:
-                score = -self.negamax(board, depth - 1, -beta, -alpha)
-            else:
-                score = -self.negamax(board, depth - 1, -(alpha + 1), -alpha)
-                if score > alpha:
-                    score = -self.negamax(board, depth - 1, -beta, -alpha)
-            board.pop()
-            if score > max_score:
-                max_score = score
-                best_move = move
-            alpha = max(alpha, score)
-            if alpha >= beta:
-                # Beta cutoff at root: still store killer/history for depth
-                self._store_killer(depth, move)
-                self._bump_history(move, depth)
-                break
-        # Store TT bound at root as well
-        flag = 'EXACT'
-        if max_score <= orig_alpha:
-            flag = 'UPPER'
-        elif max_score >= beta:
-            flag = 'LOWER'
-        self.transposition_table[fen] = (max_score, depth, flag, best_move.uci() if best_move else None)
-        # Log the final choice for learning when this call represents the final ID depth.
-        # The caller (choose_move) will call _search_root once per depth; only the last depth's
-        # returned best_move is logged before finalize_game.
-        return best_move, max_score
-
-    # ---- Move ordering and heuristics ----
-    def _order_moves(self, board: chess.Board, moves: list[chess.Move], depth: int) -> list[chess.Move]:
-        def score_move(m: chess.Move) -> int:
-            s = self._move_score(board, m)
-            # History heuristic
-            s += self.history.get(m.uci(), 0)
-            # Killer bonuses
-            killers = self.killers.get(depth, [])
-            if m.uci() in killers:
-                s += 10000
-            # TT best move bonus
-            try:
-                fen = board.fen()
-                entry = self.transposition_table.get(fen)
-                if entry and entry[3] == m.uci():
-                    s += 20000
-            except Exception:
-                pass
-            # Learned preference bonus (small)
-            if self.use_learning:
-                try:
-                    fen_key = board.fen().split(' ')[0]
-                    s += self._learn_bonus(fen_key, m.uci())
-                except Exception:
-                    pass
-            return s
-        return sorted(moves, key=score_move, reverse=True)
-
-    def _store_killer(self, depth: int, move: chess.Move) -> None:
-        try:
-            u = move.uci()
-            arr = self.killers.get(depth, [])
-            if u in arr:
-                return
-            if len(arr) < 2:
-                arr.append(u)
-            else:
-                arr[1] = arr[0]
-                arr[0] = u
-            self.killers[depth] = arr
-        except Exception:
-            pass
-
-    def _bump_history(self, move: chess.Move, depth: int) -> None:
-        try:
-            u = move.uci()
-            self.history[u] = self.history.get(u, 0) + depth * depth
-        except Exception:
-            pass
-
-    def choose_move_iterative(self, board: chess.Board, time_limit: float = 5.0) -> 'Optional[chess.Move]':
-        """Choose best move using iterative deepening with time limit.
-
-        Dynamically adapts maximum depth based on available time and branching.
-        """
-        import time
-        
-        # Check opening book first
-        position_fen = board.fen().split(' ')[0]
-        if position_fen in self.OPENING_BOOK:
-            book_moves = self.OPENING_BOOK[position_fen]
-            legal_book_moves = [move for move in book_moves if move in [m.uci() for m in board.legal_moves]]
-            if legal_book_moves:
-                chosen_uci = random.choice(legal_book_moves)
-                return chess.Move.from_uci(chosen_uci)
-        
-        start_time = time.time()
-        best_move = None
-        
-        # Iteratively deepen until time budget exhausted; cap at configured depth or 10
-        max_target = min(getattr(self, 'depth', 3), 10)
-        for depth in range(1, max_target + 1):
-            if time.time() - start_time >= time_limit:
-                break
-            
-            self.depth = depth
-            current_best = None
-            best_score = -9999999
-            alpha = -9999999
-            beta = 9999999
-            moves = list(board.legal_moves)
-            moves.sort(key=lambda m: self._move_score(board, m), reverse=True)
-            
-            for move in moves:
-                if time.time() - start_time >= time_limit:
-                    break
-                
-                board.push(move)
-                score = -self.negamax(board, depth - 1, -beta, -alpha)
-                board.pop()
-                
-                if score > best_score:
-                    best_score = score
-                    current_best = move
-                alpha = max(alpha, score)
-            
-            if current_best is not None:
-                best_move = current_best
-        
-        return best_move
-
-    def _move_score(self, board: chess.Board, move: chess.Move) -> int:
-        score = 0
-        if move.promotion is not None:
-            if move.promotion == chess.QUEEN:
-                score += 1200
-            else:
-                score += 900
-        try:
-            if board.is_capture(move):
-                if board.is_en_passant(move):
-                    victim_value = self.PIECE_VALUES[chess.PAWN]
-                else:
-                    victim_piece = board.piece_type_at(move.to_square)
-                    victim_value = self.PIECE_VALUES.get(victim_piece, 0) if victim_piece is not None else 0
-                score += 200 + victim_value
-        except Exception:
-            pass
-        try:
-            piece = board.piece_at(move.from_square)
-            if piece is not None and piece.piece_type == chess.KING:
-                from_file = chess.square_file(move.from_square)
-                to_file = chess.square_file(move.to_square)
-                if abs(from_file - to_file) == 2:
-                    score += 80
-        except Exception:
-            pass
-        try:
-            board.push(move)
-            if board.is_check():
-                score += 40
-            board.pop()
-        except Exception:
-            try:
-                board.pop()
-            except Exception:
-                pass
-        return score
+    def hide(self, event=None):
+        if self.window is not None:
+            self.window.destroy()
+            self.window = None
 
 
-    
+HAS_UPGRADES = True
 
 
 class GameController:
@@ -1363,7 +387,7 @@ class GameController:
             theme_menu = tk.OptionMenu(theme_frame, self.theme_var, 'light', 'dark')
             theme_menu.config(font=('Arial', 8))
             theme_menu.pack(side='left', fill='x', expand=True)
-            self.theme_var.trace('w', lambda *args: self.change_theme(self.theme_var.get()))
+            self.theme_var.trace_add('write', lambda *args: self.change_theme(self.theme_var.get()))
             # Apply theme on startup to ensure board colors match saved preference
             try:
                 self.change_theme(self.theme_var.get())
@@ -1621,11 +645,12 @@ class GameController:
         move = None
         engine_move_metrics = None
         start_time = time.time()
+        search_board = self.board.copy()
         try:
             if self.engine_enabled and self.engine_adapter.is_running():
                 try:
                     tm = 0.05 * depth
-                    move = self.engine_adapter.play_move(self.board, tm)
+                    move = self.engine_adapter.play_move(search_board, tm)
                     # Engine move: no learning-based explanation
                     self.ai_last_explanation = ''
                     # Collect simple engine metrics (no node count available)
@@ -1657,9 +682,9 @@ class GameController:
                         tl = max(0.05, float(tl))
                     except Exception:
                         tl = 0.25
-                    move = self.ai.choose_move_iterative(self.board, time_limit=tl)
+                    move = self.ai.choose_move_iterative(search_board, time_limit=tl)
                 else:
-                    move = self.ai.choose_move(self.board)
+                    move = self.ai.choose_move(search_board)
                 if move is not None and getattr(self.ai, 'use_learning', False):
                     try:
                         key = f"{fen_key}|{move.uci()}"
@@ -1760,7 +785,6 @@ class GameController:
         if not path:
             return
         try:
-            import csv
             keys = ['move','depth','nodes','branching','time','source']
             with open(path, 'w', newline='', encoding='utf-8') as f:
                 w = csv.writer(f)
@@ -2071,7 +1095,8 @@ class GameController:
             move_time_limit = max(0.05, (self.training_move_time_var.get() if hasattr(self, 'training_move_time_var') else 250) / 1000.0)
             snapshot_batches = int(self.training_snapshot_interval_var.get() if hasattr(self, 'training_snapshot_interval_var') else 0)
             export_interval = None if snapshot_batches <= 0 else snapshot_batches
-            self.training_ai = TrainingAI(self.ai, depth=current_depth, batch_size=batch_size, export_interval=export_interval, move_time_limit=move_time_limit)
+            self.training_ai = TrainingAI(self.ai, depth=current_depth, batch_size=batch_size, export_interval=export_interval, move_time_limit=move_time_limit,
+                max_games=max(0, int(self.training_games_var.get())))
 
             # Persist training settings
             if self.config:
@@ -2507,6 +1532,9 @@ class GameController:
                 self.engine_toggle.configure(text='Use Engine: Off')
 
     def on_close(self):
+        self._ai_session_id += 1
+        if self.training_ai:
+            self.training_ai.stop()
         try:
             if self.engine_adapter.is_running():
                 try:

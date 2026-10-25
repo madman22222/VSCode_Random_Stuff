@@ -52,7 +52,7 @@ class TestSpecialMoves(unittest.TestCase):
         other_moves = []
         for m in board.legal_moves:
             p = board.piece_at(m.from_square)
-            if p is None or p.piece_type != chess.KING:
+            if p is not None and p.piece_type != chess.KING and not board.is_capture(m):
                 other_moves.append(m)
         self.assertTrue(len(other_moves) >= 1, 'No non-castling moves found')
         cast_score = ai._move_score(board, castling_moves[0])

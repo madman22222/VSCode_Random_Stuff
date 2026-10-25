@@ -5,7 +5,8 @@ Default behavior launches the GUI. Use CLI flags to run headless training.
 
 import argparse
 import sys
-import time
+from simple_ai import SimpleAI
+from training_ai import TrainingAI
 
 
 def run_gui() -> None:
@@ -19,17 +20,16 @@ def run_gui() -> None:
 
 def run_training(args) -> int:
     """Run headless Training AI without GUI using CLI parameters."""
-    from game_controller import SimpleAI, TrainingAI
 
     depth = max(1, int(args.depth))
     batch_size = max(1, int(args.batch_size))
-    move_time_sec = max(0.05, float(args.move_ms) / 1000.0)
+    move_time_sec = max(0.001, float(args.move_ms) / 1000.0)
     snapshot_batches = int(args.snapshot_batches)
     export_interval = None if snapshot_batches <= 0 else snapshot_batches
     total_games = int(args.games)
     compress = not bool(args.no_compress)
 
-    ai = SimpleAI(depth=depth)
+    ai = SimpleAI(depth=depth, learning_path=args.learning_file)
     # Apply compression preference up front
     try:
         ai.compress_learning = compress
@@ -42,28 +42,22 @@ def run_training(args) -> int:
         batch_size=batch_size,
         export_interval=export_interval,
         move_time_limit=move_time_sec,
+        max_games=total_games,
+        max_moves=args.max_plies,
     )
     trainer.start()
 
-    if total_games > 0:
-        # Wait until desired number of games completes
-        try:
-            while trainer.games_played < total_games:
-                time.sleep(0.25)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            trainer.stop()
-    else:
-        # Run until interrupted
-        print("Press Ctrl+C to stop training...")
-        try:
-            while True:
-                time.sleep(1.0)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            trainer.stop()
+    print("Training started. Press Ctrl+C to stop and save.")
+    try:
+        while trainer.thread.is_alive():
+            trainer.thread.join(timeout=0.25)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        trainer.stop()
+    if trainer.last_error:
+        print(f"Training failed: {trainer.last_error}", file=sys.stderr)
+        return 1
 
     return 0
 
@@ -77,12 +71,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--snapshot-batches", type=int, default=0, help="Training: export readable every N batches (0=off)")
     p.add_argument("--games", type=int, default=0, help="Training: stop after N games (0=run until Ctrl+C)")
     p.add_argument("--no-compress", action="store_true", help="Disable gzip compression for learning data")
+    p.add_argument("--learning-file", default=None, help="Learning JSON path (automatically reloaded next run)")
+    p.add_argument("--max-plies", type=int, default=300, help="Maximum half-moves per training game")
     return p
 
 
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.games < 0 or args.depth < 1 or args.max_plies < 1 or args.move_ms < 1 or args.batch_size < 1:
+        parser.error("Depth, move time, batch size and max plies must be positive; games cannot be negative")
 
     if args.training:
         return run_training(args)

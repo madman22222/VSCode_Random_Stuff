@@ -1,117 +1,94 @@
-"""TrainingAI module extracted from game_controller.
-Provides the headless TrainingAI class for self-play learning batches.
-"""
+"""Self-play training with bounded games, clean shutdown and saved learning."""
 from __future__ import annotations
 
-import chess  # type: ignore
 import threading
-import time
-import random
-import sys
-from typing import Optional
-
+import chess
 from simple_ai import SimpleAI
-try:
-    from logger import info, debug, warn, error
-except Exception:
-    def info(*a, **k): pass
-    def debug(*a, **k): pass
-    def warn(*a, **k): pass
-    def error(*a, **k): pass
+from logger import info, error
+
 
 class TrainingAI:
-    """Headless high-speed AI vs AI training mode."""
-    def __init__(self, ai_instance: SimpleAI, depth: int = 3, batch_size: int = 100, export_interval: int | None = None, move_time_limit: float = 0.25):
+    def __init__(self, ai_instance: SimpleAI, depth=3, batch_size=100,
+                 export_interval=None, move_time_limit=0.25,
+                 max_games=0, max_moves=300):
         self.ai = ai_instance
-        self.depth = depth
-        self.running = False
-        self.games_played = 0
-        self.results = {'white': 0, 'black': 0, 'draw': 0}
-        self.thread: Optional[threading.Thread] = None
+        self.depth = max(1, int(depth))
         self.batch_size = max(1, int(batch_size))
         self.export_interval = export_interval
-        self._batches_done = 0
-        self.move_time_limit = max(0.05, float(move_time_limit))
+        self.move_time_limit = max(0.001, float(move_time_limit))
+        self.max_games = max(0, int(max_games))
+        self.max_moves = max(1, int(max_moves))
+        self.games_played = 0
+        self.results = {'white': 0, 'black': 0, 'draw': 0}
         self.current_move_count = 0
-        self._last_move_print = 0.0
+        self.running = False
+        self.thread = None
+        self.last_error = None
+        self._stop = threading.Event()
+
     def start(self):
-        if self.running: return
+        if self.thread and self.thread.is_alive():
+            return
+        self._stop.clear()
+        self.last_error = None
+        self.ai.depth = self.depth
+        self.ai.defer_persistence = True
+        self.ai.persist_every_n = self.batch_size
+        self.ai.export_readable_during_training = False
+        self.ai._pending_games = 0
         self.running = True
-        try:
-            self.ai.defer_persistence = True
-            self.ai.persist_every_n = self.batch_size
-            self.ai.export_readable_during_training = False if self.export_interval is None else True
-            self.ai._pending_games = 0
-        except Exception: pass
         self.thread = threading.Thread(target=self._training_loop, daemon=True)
         self.thread.start()
-        info("==== TRAINING START ====")
-        try:
-            enc = getattr(sys.stdout, 'encoding', '') or ''
-            if 'UTF' not in enc.upper():
-                pass
-        except Exception:
-            pass
-        info(f"Depth={self.depth} learning={self.ai.use_learning}")
-        try:
-            self.current_move_count = 0; self._last_move_print = 0.0
-        except Exception: pass
+
     def stop(self):
-        if not self.running: return
+        self._stop.set()
+        if self.thread and self.thread is not threading.current_thread():
+            self.thread.join()
         self.running = False
-        if self.thread: self.thread.join(timeout=2.0)
+
+    def _training_loop(self):
         try:
-            self.ai._save_learning_db()
-            try: self.ai.export_readable_learning()
-            except Exception: pass
+            while not self._stop.is_set() and (
+                    not self.max_games or self.games_played < self.max_games):
+                board = chess.Board()
+                self.ai.game_log = []
+                self.ai.transposition_table.clear()
+                self.current_move_count = 0
+                while (not board.is_game_over(claim_draw=True)
+                       and self.current_move_count < self.max_moves
+                       and not self._stop.is_set()):
+                    move = self.ai.choose_move_iterative(board, self.move_time_limit)
+                    if move is None or move not in board.legal_moves:
+                        raise RuntimeError('AI did not return a legal move')
+                    board.push(move)
+                    self.current_move_count += 1
+                if self._stop.is_set():
+                    # An interrupted game has no outcome to learn from.
+                    self.ai.game_log = []
+                    break
+                outcome = board.outcome(claim_draw=True)
+                winner = 'draw' if outcome is None or outcome.winner is None else (
+                    'white' if outcome.winner == chess.WHITE else 'black')
+                self.ai.finalize_game(winner)
+                self.results[winner] += 1
+                self.games_played += 1
+                info(f'Game {self.games_played}: {winner}; '
+                     f'{self.current_move_count} half-moves; '
+                     f'{len(self.ai.learning_db)} learned moves')
+                if (self.export_interval and self.games_played %
+                        (self.batch_size * self.export_interval) == 0):
+                    self.ai.export_readable_learning()
+        except Exception as exc:
+            self.last_error = exc
+            error(f'Training failed: {exc}')
+        finally:
+            try:
+                self.ai._save_learning_db()
+                self.ai.export_readable_learning()
+            except Exception as exc:
+                self.last_error = exc
+                error(f'Could not save training: {exc}')
             self.ai.defer_persistence = False
             self.ai.export_readable_during_training = False
-        except Exception: pass
-        info("==== TRAINING STOP ====")
-        info(f"Games={self.games_played} W={self.results['white']} B={self.results['black']} D={self.results['draw']}")
-        if self.games_played > 0:
-            white_pct = (self.results['white']/self.games_played)*100
-            black_pct = (self.results['black']/self.games_played)*100
-            draw_pct = (self.results['draw']/self.games_played)*100
-            info(f"WinRates W={white_pct:.1f}% B={black_pct:.1f}% D={draw_pct:.1f}%")
-        try: self.current_move_count = 0
-        except Exception: pass
-    def _training_loop(self):
-        while self.running:
-            try:
-                debug(f"Game {self.games_played + 1} start")
-                board = chess.Board(); self.ai.game_log = []
-                move_count = 0; self.current_move_count = 0; max_moves = 300
-                while not board.is_game_over() and move_count < max_moves and self.running:
-                    move = self.ai.choose_move_iterative(board, time_limit=self.move_time_limit)
-                    if move is None:
-                        legal = list(board.legal_moves)
-                        if not legal: break
-                        move = random.choice(legal)
-                    board.push(move); move_count += 1; self.current_move_count = move_count
-                    try:
-                        now = time.time()
-                        if (move_count % 10 == 0) or (now - self._last_move_print >= 1.0):
-                            debug(f"Moves={move_count}"); self._last_move_print = now
-                    except Exception: pass
-                if not self.running: break
-                self.games_played += 1
-                if board.is_checkmate():
-                    winner = 'black' if board.turn == chess.WHITE else 'white'; result_text = f"{'White' if winner=='white' else 'Black'} wins by checkmate"
-                elif board.is_stalemate(): winner = 'draw'; result_text = "Draw by stalemate"
-                elif board.is_insufficient_material(): winner = 'draw'; result_text = "Draw by insufficient material"
-                elif move_count >= max_moves: winner = 'draw'; result_text = "Draw by move limit"
-                else: winner = 'draw'; result_text = "Draw"
-                self.results[winner] += 1
-                self.ai.finalize_game(winner)
-                info(f"Game {self.games_played} {result_text} moves={move_count}")
-                if self.export_interval is not None and self.ai._pending_games == 0:
-                    self._batches_done += 1
-                    if (self._batches_done % max(1, self.export_interval)) == 0:
-                        try:
-                            self.ai.export_readable_learning(); debug("Readable snapshot exported")
-                        except Exception: pass
-                if self.games_played % 10 == 0:
-                    info(f"Stats {self.games_played}: W={self.results['white']} ({(self.results['white']/self.games_played)*100:.1f}%) B={self.results['black']} ({(self.results['black']/self.games_played)*100:.1f}%) D={self.results['draw']} ({(self.results['draw']/self.games_played)*100:.1f}%)")
-            except Exception as e:
-                warn(f"Training loop error: {e}"); time.sleep(0.1)
+            self.running = False
+            info(f'Training stopped: {self.games_played} games; {self.results}')

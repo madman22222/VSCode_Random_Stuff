@@ -60,6 +60,15 @@ class TestGameControllerMocked(unittest.TestCase):
 
     def setUp(self):
         """Set up mocks for tkinter widgets."""
+        self.patcher_config = patch('game_controller.ConfigManager', return_value=None)
+        self.patcher_config.start()
+        self.addCleanup(self.patcher_config.stop)
+        patcher_messages = patch('game_controller.messagebox')
+        patcher_messages.start()
+        self.addCleanup(patcher_messages.stop)
+        self.patcher_dialogs = patch('game_controller.filedialog')
+        self.mock_dialogs = self.patcher_dialogs.start()
+        self.addCleanup(self.patcher_dialogs.stop)
         # Mock tkinter components
         self.mock_root = MagicMock()
         self.mock_root.title = MagicMock()
@@ -173,7 +182,7 @@ class TestGameControllerMocked(unittest.TestCase):
     def test_load_pgn(self, mock_file):
         """Test loading PGN file."""
         controller = GameController(self.mock_root)
-        self.mock_tk.filedialog.askopenfilename.return_value = "test.pgn"
+        self.mock_dialogs.askopenfilename.return_value = "test.pgn"
         
         controller.load_pgn()
         
@@ -183,9 +192,10 @@ class TestGameControllerMocked(unittest.TestCase):
     def test_save_pgn(self):
         """Test saving PGN file."""
         controller = GameController(self.mock_root)
-        self.mock_tk.filedialog.asksaveasfilename.return_value = "test.pgn"
+        self.mock_dialogs.asksaveasfilename.return_value = "test.pgn"
         
         with patch('builtins.open', mock_open()) as m:
+            m.return_value.write.side_effect = len
             controller.save_pgn()
             m.assert_called_once()
 
@@ -251,7 +261,11 @@ class TestGameControllerMocked(unittest.TestCase):
             mock_dialog = MagicMock()
             mock_toplevel.return_value = mock_dialog
             
-            # Test queen promotion (default)
+            mock_dialog.wait_window.side_effect = lambda: next(
+                call.kwargs['command']() for call in self.mock_tk.Button.call_args_list
+                if call.kwargs.get('text') == 'Queen')
+            controller.piece_images = None
+            # Simulate selecting the Queen button.
             result = controller.ask_promotion(chess.WHITE)
             self.assertEqual(result, chess.QUEEN)
 
@@ -260,7 +274,7 @@ class TestGameControllerMocked(unittest.TestCase):
         controller = GameController(self.mock_root)
         
         # Set up checkmate position
-        controller.board = chess.Board("k7/8/1K6/8/8/8/8/1R6 b - - 0 1")  # black is checkmated
+        controller.board = chess.Board("k7/1Q6/2K5/8/8/8/8/8 b - - 0 1")  # black is checkmated
         
         # Make sure board is in checkmate
         self.assertTrue(controller.board.is_checkmate())
