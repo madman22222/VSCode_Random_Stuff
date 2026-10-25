@@ -75,6 +75,9 @@ class TestGameControllerMocked(unittest.TestCase):
         self.mock_root.resizable = MagicMock()
         
         # Patch tkinter module
+        ttk_patcher = patch('game_controller.ttk')
+        ttk_patcher.start()
+        self.addCleanup(ttk_patcher.stop)
         self.patcher_tk = patch('game_controller.tk')
         self.mock_tk = self.patcher_tk.start()
         

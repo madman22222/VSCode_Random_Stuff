@@ -17,7 +17,7 @@ Architecture:
 """
 
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 import chess  # type: ignore - Python-chess library handles all chess rules (legal moves, check, checkmate, castling, en passant, etc.)
 from simple_ai import SimpleAI
@@ -74,6 +74,7 @@ class GameController:
 
     def __init__(self, master: tk.Tk):
         self.master = master
+        self.ui_font = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
         
         # Initialize config manager first
         if HAS_UPGRADES and ConfigManager:
@@ -136,39 +137,49 @@ class GameController:
             self.clock = None
             self.clock_enabled = False
 
-        # build UI
-        self.status = tk.Label(master, text='White to move', font=('Arial', 12))
-        self.status.grid(row=0, column=0, columnspan=8)
-        self.hints_label = tk.Label(master, text='', font=('Arial', 9), fg='#333333')
-        self.hints_label.grid(row=1, column=0, columnspan=8)
+        # A weighted two-column shell keeps the board and controls usable on resize.
+        master.title('Chess Studio')
+        master.minsize(980, 720)
+        master.geometry('1220x820')
+        master.columnconfigure(0, weight=3, minsize=500)
+        master.columnconfigure(1, weight=1, minsize=440)
+        master.rowconfigure(2, weight=1)
+        header = tk.Frame(master)
+        header.grid(row=0, column=0, columnspan=2, sticky='ew', padx=24, pady=(18, 4))
+        self.title_label = tk.Label(header, text='CHESS STUDIO', font=(self.ui_font, 19, 'bold'))
+        self.title_label.pack(side='left')
+        tk.Label(header, text='Play · Learn · Improve', font=(self.ui_font, 10)).pack(side='right')
+        self.status = tk.Label(master, text='White to move', font=(self.ui_font, 12, 'bold'), anchor='w')
+        self.status.grid(row=1, column=0, sticky='ew', padx=24, pady=(4, 8))
+        self.hints_label = tk.Label(master, text='', font=(self.ui_font, 9), anchor='w', wraplength=420)
+        self.hints_label.grid(row=1, column=1, sticky='ew', padx=16)
         self.ai_last_explanation = ''
 
-        board_frame = tk.Frame(master)
-        board_frame.grid(row=2, column=0, rowspan=8, columnspan=8)
+        self.board_area = tk.Frame(master)
+        self.board_area.grid(row=2, column=0, sticky='nsew', padx=(24, 12), pady=(0, 20))
+        board_frame = tk.Frame(self.board_area)
+        board_frame.place(relx=0.5, rely=0.5, anchor='center', width=500, height=500)
         self.board_view = BoardView(board_frame, on_click=self.on_click)
+        self._board_resize_job = None
+        self.board_area.bind('<Configure>', self._schedule_board_resize)
 
-        # Right-side controls with scrollable canvas for compact display
-        ctrl_frame = tk.Frame(master)
-        ctrl_frame.grid(row=2, column=8, rowspan=8, sticky='ns', padx=6)
+        ctrl_frame = tk.Frame(master, width=440)
+        ctrl_frame.pack_propagate(False)
+        ctrl_frame.grid(row=2, column=1, sticky='nsew', padx=(8, 24), pady=(0, 20))
         self.ctrl_frame = ctrl_frame
-        
-        # Create a canvas with scrollbar for the control panel
-        canvas_container = tk.Frame(ctrl_frame)
-        canvas_container.pack(fill='both', expand=True)
-        
-        scrollbar = tk.Scrollbar(canvas_container, orient='vertical')
-        scrollbar.pack(side='right', fill='y')
-        
-        ctrl_canvas = tk.Canvas(canvas_container, yscrollcommand=scrollbar.set, width=220, highlightthickness=0)
-        ctrl_canvas.pack(side='left', fill='both', expand=True)
-        scrollbar.config(command=ctrl_canvas.yview)
-        self.ctrl_canvas = ctrl_canvas
-        
-        # Frame inside canvas for all controls
-        scrollable_frame = tk.Frame(ctrl_canvas)
-        ctrl_canvas.create_window((0, 0), window=scrollable_frame, anchor='nw')
+        # Native notebook pages replace the very long canvas of child windows.
+        # Scrolling that canvas copied stale child-window pixels on Windows.
+        self.controls_notebook = ttk.Notebook(ctrl_frame)
+        self.controls_notebook.pack(fill='both', expand=True)
+        pages = []
+        for title in ('Play', 'Training', 'Settings', 'Tools'):
+            page = tk.Frame(self.controls_notebook, padx=12, pady=12)
+            self.controls_notebook.add(page, text=title)
+            pages.append(page)
+        scrollable_frame, training_page, settings_page, tools_page = pages
         self.scrollable_frame = scrollable_frame
-        
+        self.control_pages = pages
+
         # Small helper to add an info icon with a tooltip
         def _info(parent: tk.Widget, text: str) -> tk.Label:
             lbl = tk.Label(parent, text='ℹ', font=('Arial', 8, 'bold'), fg='#3f51b5', cursor='question_arrow')
@@ -178,41 +189,10 @@ class GameController:
                 pass
             return lbl
 
-        # Update scroll region when frame changes size (throttled)
-        def on_frame_configure(event):
-            try:
-                ctrl_canvas.update_idletasks()
-                ctrl_canvas.configure(scrollregion=ctrl_canvas.bbox('all'))
-            except Exception:
-                pass
-        scrollable_frame.bind('<Configure>', on_frame_configure)
-
-        # Improve scrolling responsiveness: bind to canvas and inner frame only
-        ctrl_canvas.configure(yscrollincrement=20)
-        def on_mousewheel(event):
-            try:
-                if getattr(event, 'delta', 0) != 0:
-                    ctrl_canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
-                elif getattr(event, 'num', None) == 4:
-                    ctrl_canvas.yview_scroll(-1, 'units')
-                elif getattr(event, 'num', None) == 5:
-                    ctrl_canvas.yview_scroll(1, 'units')
-            except Exception:
-                pass
-        # Ensure canvas gets focus under pointer for wheel events
-        ctrl_canvas.bind('<Enter>', lambda e: ctrl_canvas.focus_set())
-        ctrl_canvas.bind('<MouseWheel>', on_mousewheel)
-        scrollable_frame.bind('<MouseWheel>', on_mousewheel)
-        # Linux support
-        ctrl_canvas.bind('<Button-4>', on_mousewheel)
-        ctrl_canvas.bind('<Button-5>', on_mousewheel)
-        scrollable_frame.bind('<Button-4>', on_mousewheel)
-        scrollable_frame.bind('<Button-5>', on_mousewheel)
-        
         # Move list - more compact
         tk.Label(scrollable_frame, text='Moves', font=('Arial', 9, 'bold')).pack()
-        self.move_list = tk.Listbox(scrollable_frame, width=20, height=12, font=('Arial', 8))
-        self.move_list.pack(fill='x', padx=2, pady=2)
+        self.move_list = tk.Listbox(scrollable_frame, width=20, height=7, font=('Arial', 8))
+        self.move_list.pack(fill='both', expand=True, padx=2, pady=6)
 
         btn_frame = tk.Frame(scrollable_frame)
         btn_frame.pack(pady=2)
@@ -246,8 +226,8 @@ class GameController:
         self.depth_scale = depth_scale
         # Metrics display
         self.metrics_var = tk.StringVar(value='Metrics: (none)')
-        tk.Label(scrollable_frame, textvariable=self.metrics_var, font=('Arial', 8), fg='#555').pack(pady=2)
-        export_btn = tk.Button(scrollable_frame, text='Export Metrics CSV', command=self.export_metrics_csv, font=('Arial', 8))
+        tk.Label(tools_page, textvariable=self.metrics_var, font=('Arial', 8), fg='#555', wraplength=370, justify='left').pack(pady=2)
+        export_btn = tk.Button(tools_page, text='Export Metrics CSV', command=self.export_metrics_csv, font=('Arial', 8))
         export_btn.pack(pady=2)
         
         # Game mode selector
@@ -286,14 +266,14 @@ class GameController:
         # Per-move time for GUI AI (separate from Training)
         pace2_frame = tk.Frame(mode_frame)
         pace2_frame.pack(fill='x', padx=8, pady=2)
-        tk.Label(pace2_frame, text='GUI AI Per-move time (ms):', font=('Arial', 8)).pack(side='left')
+        tk.Label(pace2_frame, text='Move budget (ms):', font=('Arial', 8)).pack(side='left')
         _info(pace2_frame, 'Time cap per move for built-in AI in Player vs AI and AI vs AI (UI). Training AI uses its own Per-move time setting below.').pack(side='left', padx=4)
         self.gui_move_time_var = tk.IntVar(value=(self.config.get('gui_move_time_ms', 250) if self.config else 250))
         gui_move_scale = tk.Scale(pace2_frame, from_=50, to=2000, orient='horizontal', variable=self.gui_move_time_var, length=120, sliderlength=14, command=lambda _=None: self.on_gui_move_time_change())
         gui_move_scale.pack(side='left', padx=4)
 
         # General options
-        options_frame = tk.LabelFrame(scrollable_frame, text='Options', font=('Arial', 9, 'bold'))
+        options_frame = tk.LabelFrame(settings_page, text='Options', font=('Arial', 9, 'bold'))
         options_frame.pack(fill='x', pady=2, padx=2)
         self.autosave_pgn_var = tk.BooleanVar(value=self.config.get('auto_save_pgn', False) if self.config else False)
         # Row for autosave option + info icon
@@ -317,7 +297,7 @@ class GameController:
             pass
 
         # Training settings
-        training_frame = tk.LabelFrame(scrollable_frame, text='Training Settings', font=('Arial', 9, 'bold'))
+        training_frame = tk.LabelFrame(training_page, text='Training Settings', font=('Arial', 9, 'bold'))
         training_frame.pack(fill='x', pady=2, padx=2)
         self.training_batch_size_var = tk.IntVar(value=(self.config.get('training_batch_size', 100) if self.config else 100))
         self.training_move_time_var = tk.IntVar(value=(self.config.get('training_move_time_ms', 250) if self.config else 250))  # milliseconds per move
@@ -337,7 +317,7 @@ class GameController:
         _info(row2, 'Time budget per move during training. Guarantees progress at high depths.').pack(side='left', padx=4)
         row3 = tk.Frame(training_frame)
         row3.pack(fill='x', padx=4, pady=1)
-        tk.Label(row3, text='Readable snapshot every N batches (0=off):', font=('Arial', 8)).pack(side='left')
+        tk.Label(row3, text='Snapshot interval (batches, 0=off):', font=('Arial', 8)).pack(side='left')
         snap_entry = tk.Entry(row3, textvariable=self.training_snapshot_interval_var, width=6, font=('Arial', 8))
         snap_entry.pack(side='left', padx=6)
         _info(row3, 'Export readable learning after N batches. 0 disables periodic snapshots.').pack(side='left', padx=4)
@@ -353,8 +333,8 @@ class GameController:
         # Quick actions: Copy command / Run training
         actions_row = tk.Frame(training_frame)
         actions_row.pack(fill='x', padx=4, pady=4)
-        tk.Button(actions_row, text='Copy Training Command', font=('Arial', 8), command=self.copy_training_command).pack(side='left')
-        tk.Button(actions_row, text='Run Training in Console', font=('Arial', 8), command=self.run_training_now).pack(side='left', padx=6)
+        tk.Button(actions_row, text='Copy command', font=('Arial', 8), command=self.copy_training_command).pack(side='left')
+        tk.Button(actions_row, text='Run in console', font=('Arial', 8), command=self.run_training_now).pack(side='left', padx=6)
         _info(actions_row, 'Copy: puts a ready-to-run CLI command on clipboard. Run: opens a new console window executing training.').pack(side='left', padx=6)
         # Tooltip for reset action
         try:
@@ -371,7 +351,7 @@ class GameController:
 
         # New features frame - more compact
         if HAS_UPGRADES:
-            features_frame = tk.LabelFrame(scrollable_frame, text='Features', font=('Arial', 9, 'bold'))
+            features_frame = tk.LabelFrame(settings_page, text='Features', font=('Arial', 9, 'bold'))
             features_frame.pack(fill='x', pady=2, padx=2)
             self.features_frame = features_frame
             
@@ -432,7 +412,7 @@ class GameController:
             
             # Statistics display - more compact
             if self.config:
-                stats_frame = tk.LabelFrame(scrollable_frame, text='Stats', font=('Arial', 9, 'bold'))
+                stats_frame = tk.LabelFrame(settings_page, text='Stats', font=('Arial', 9, 'bold'))
                 stats_frame.pack(fill='x', pady=2, padx=2)
                 
                 stats = self.config.get('statistics', {})
@@ -446,7 +426,7 @@ class GameController:
                 self.stats_label.pack(padx=2, pady=2)
 
         # Learning panel
-        learn_frame = tk.LabelFrame(scrollable_frame, text='Learning', font=('Arial', 9, 'bold'))
+        learn_frame = tk.LabelFrame(training_page, text='Learning', font=('Arial', 9, 'bold'))
         learn_frame.pack(fill='x', pady=2, padx=2)
         self.learn_use_var = tk.BooleanVar(value=True)
         def toggle_learning():
@@ -468,7 +448,7 @@ class GameController:
                   font=('Arial', 8)).pack(side='left', padx=1)
 
         # Engine frame - more compact
-        engine_frame = tk.LabelFrame(scrollable_frame, text='Engine (Advanced)', font=('Arial', 9, 'bold'))
+        engine_frame = tk.LabelFrame(tools_page, text='Engine (Advanced)', font=('Arial', 9, 'bold'))
         engine_frame.pack(fill='x', pady=2, padx=2)
         self.engine_frame = engine_frame
         self.engine_path_var = tk.StringVar()
@@ -492,13 +472,13 @@ class GameController:
         self.backoff_var = tk.StringVar(value='linear')
         self.backoff_max = tk.DoubleVar(value=5.0)
         self.auto_download_var = tk.BooleanVar(value=False)
-        self.verify_log = tk.Listbox(scrollable_frame, width=22, height=4, font=('Arial', 7))
+        self.verify_log = tk.Listbox(tools_page, width=22, height=4, font=('Arial', 7))
         
         self.engine_toggle = tk.Button(engine_frame, text='Use Engine: Off', command=self.toggle_engine, font=('Arial', 8))
         self.engine_toggle.pack(fill='x', pady=1, padx=2)
 
         # Batch PGN Converter frame
-        converter_frame = tk.LabelFrame(scrollable_frame, text='Batch PGN Converter', font=('Arial', 9, 'bold'))
+        converter_frame = tk.LabelFrame(tools_page, text='Batch PGN Converter', font=('Arial', 9, 'bold'))
         converter_frame.pack(fill='x', pady=2, padx=2)
         self.converter_format_var = tk.StringVar(value='json')
         self.converter_input_dir_var = tk.StringVar(value='')
@@ -518,7 +498,8 @@ class GameController:
         self.load_piece_images()
         self.load_overlay_icons()
 
-        # finalize
+        # Finalize styles after every control exists.
+        self.apply_theme_to_ui(self.theme_var.get())
         self.update_board()
         master.protocol('WM_DELETE_WINDOW', self.on_close)
 
@@ -598,7 +579,6 @@ class GameController:
                 self.selected = None
                 self.board_view.clear_highlights()
                 self.update_board()
-                self.master.update()
                 
                 # Update statistics if game over
                 if self.board.is_game_over() and self.config:
@@ -985,44 +965,82 @@ class GameController:
         except Exception as e:
             print(f"Theme change not supported: {e}")
 
-    def apply_theme_to_ui(self, theme: str) -> None:
-        """Apply theme colors to app background and control panels only."""
-        try:
-            palette = THEMES.get(theme, THEMES['light'])
-            bg = palette.get('bg', '#F5F5F5')
-            fg = palette.get('fg', '#000000')
-            btn_bg = palette.get('button_bg', '#E0E0E0')
+    def _schedule_board_resize(self, event=None):
+        if self._board_resize_job is not None:
+            self.master.after_cancel(self._board_resize_job)
+        self._board_resize_job = self.master.after(40, self._resize_board)
 
-            # Root window
+    def _resize_board(self):
+        self._board_resize_job = None
+        edge = max(160, min(self.board_area.winfo_width(), self.board_area.winfo_height()))
+        # Include coordinate labels while preserving perfectly square cells.
+        square_size = max(16, (edge - 24) // 8)
+        self.board_view.parent.place_configure(width=square_size * 8 + 24,
+                                              height=square_size * 8 + 24)
+        self.board_view.resize(square_size)
+        if self.selected is not None:
+            self.board_view.show_legal_moves(self.board, self.selected)
+            self.board_view.highlight(self.selected)
+
+    def apply_theme_to_ui(self, theme):
+        dark = theme == 'dark'
+        bg, card, fg, muted = ('#17212f', '#223044', '#edf3fa', '#aebed0') if dark else (
+            '#edf2f7', '#ffffff', '#172b44', '#52657c')
+        accent = '#2563eb'
+        self.master.configure(bg=bg)
+        style = ttk.Style(self.master)
+        style.theme_use('clam')
+        style.configure('TNotebook', background=bg, borderwidth=0)
+        style.configure('TNotebook.Tab', padding=(14, 10), font=(self.ui_font, 10),
+                        background=bg, foreground=muted)
+        style.map('TNotebook.Tab', background=[('selected', card)],
+                  foreground=[('selected', accent)])
+
+        def decorate(widget):
+            # Board canvases and coordinate labels have their own rendering.
+            if widget is self.board_area:
+                widget.configure(bg=bg)
+                return
+            kind = widget.winfo_class()
             try:
-                self.master.configure(bg=bg)
-            except Exception:
+                if kind in ('Frame', 'Labelframe'):
+                    widget.configure(bg=card, bd=0)
+                    if kind == 'Labelframe':
+                        widget.configure(fg=muted, font=(self.ui_font, 10, 'bold'),
+                                         padx=8, pady=6)
+                elif kind == 'Label':
+                    widget.configure(bg=card, fg=fg, font=(self.ui_font, 9))
+                elif kind == 'Button':
+                    widget.configure(bg='#e7eef9' if not dark else '#334860', fg=fg,
+                                     activebackground=accent, activeforeground='white',
+                                     relief='flat', bd=0, padx=9, pady=6,
+                                     font=(self.ui_font, 9), cursor='hand2')
+                elif kind in ('Checkbutton', 'Radiobutton'):
+                    widget.configure(bg=card, fg=fg, activebackground=card,
+                                     activeforeground=fg, selectcolor=card,
+                                     font=(self.ui_font, 9), highlightthickness=0)
+                elif kind == 'Scale':
+                    widget.configure(bg=card, fg=fg, highlightthickness=0,
+                                     troughcolor=bg, bd=0)
+                elif kind in ('Entry', 'Listbox'):
+                    widget.configure(bg=bg, fg=fg, relief='flat', bd=0,
+                                     highlightthickness=1, highlightbackground=bg,
+                                     selectbackground=accent, selectforeground='white',
+                                     font=(self.ui_font, 10))
+            except tk.TclError:
                 pass
+            for child in widget.winfo_children():
+                decorate(child)
+        for child in self.master.winfo_children():
+            decorate(child)
+        self.title_label.configure(font=(self.ui_font, 19, 'bold'))
+        self.status.configure(bg=bg, fg=fg, font=(self.ui_font, 12, 'bold'))
+        self.hints_label.configure(bg=bg, fg=muted)
+        self.start_pause_button.configure(bg=accent, fg='white')
+        if hasattr(self, 'white_clock_label'):
+            self.white_clock_label.configure(bg=bg, fg=fg)
+            self.black_clock_label.configure(bg=bg, fg=fg)
 
-            # Status and hints labels
-            for lbl in (getattr(self, 'status', None), getattr(self, 'hints_label', None)):
-                try:
-                    if lbl:
-                        lbl.configure(bg=bg, fg=fg)
-                except Exception:
-                    pass
-
-            # Control panel frames/canvas
-            for w in (
-                getattr(self, 'ctrl_frame', None),
-                getattr(self, 'ctrl_canvas', None),
-                getattr(self, 'scrollable_frame', None),
-                getattr(self, 'features_frame', None),
-                getattr(self, 'engine_frame', None),
-            ):
-                try:
-                    if w:
-                        w.configure(bg=bg)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    
     def change_mode(self) -> None:
         """Change game mode between player vs player and player vs AI."""
         self.play_mode = self.mode_var.get()
@@ -1244,10 +1262,6 @@ class GameController:
             cmd = self._build_training_cli()
             self.master.clipboard_clear()
             self.master.clipboard_append(cmd)
-            try:
-                self.master.update()
-            except Exception:
-                pass
             messagebox.showinfo('Training', 'Training command copied to clipboard.')
         except Exception as e:
             messagebox.showerror('Training', f'Failed to copy command: {e}')

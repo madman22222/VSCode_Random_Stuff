@@ -33,6 +33,8 @@ jobs:
           path: metrics_sample.csv
       - name: Run tests with coverage
         run: coverage run run_tests.py
+      - name: Desktop resize and interaction checks
+        run: xvfb-run -a python run_tests.py
       - name: Generate coverage reports
         run: |
           coverage xml || true
