@@ -16,7 +16,7 @@ def main():
     summary = {'success': False}
     try:
         with tempfile.TemporaryDirectory(prefix='Chess Studio portable test ') as temp:
-            temp = Path(temp)
+            temp = Path(temp).resolve()
             with zipfile.ZipFile(args.zip) as archive:
                 archive.extractall(temp)
             app = temp / 'ChessStudio'

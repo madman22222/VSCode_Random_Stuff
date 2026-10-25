@@ -17,7 +17,7 @@ class TestPortablePaths(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name).resolve()
         app_paths.data_dir.cache_clear()
         self.addCleanup(app_paths.data_dir.cache_clear)
 
