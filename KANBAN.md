@@ -10,15 +10,17 @@ retroactive duplicate issues.
 
 ## Current status
 
-Last checked against repository issues and merged pull requests: **October 25, 2026**.
+Last checked against the README planning link, repository issues, and merged pull
+requests: **October 25, 2026 (18:00 UTC)**.
 
 | Backlog | Ready | In progress | Review / test | Done |
 | --- | --- | --- | --- | --- |
 | 16 proposed improvements | 4 next tasks | 0 | 0 | 26 delivered feature/planning cards |
 
-All improvement issues **#9–#28 remain open**. No improvement has been marked
-started or complete without implementation evidence. Completed cards include
-25 delivered feature groups plus the merged planning-board setup in PR #29.
+All improvement issues **#9–#28 remain open** (plus unrelated parking issue #2).
+No improvement has been marked started or complete without implementation
+evidence. Completed cards include 25 delivered feature groups plus the merged
+planning-board setup in PR #29.
 
 ### Next tasks
 
