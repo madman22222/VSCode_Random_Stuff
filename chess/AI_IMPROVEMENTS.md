@@ -82,3 +82,21 @@ scaled images, and focus. No fixed speedup or FPS is promised across machines.
 Run `python run_tests.py` and the tactical runner before changing search behavior;
 measure representative positions and compare outcome reports before claiming
 improved playing strength. Review analysis is deliberately shallow and can err.
+
+## Version 3 and measured tuning
+
+Position keys now include side, castling and legal en-passant state. Legacy counts
+remain unchanged and exportable, without being assigned invented context. Legacy
+scoring approval is reset. Repetition history/draw counters remain a limitation.
+The isolated [migration smoke report](../benchmarks/memory-migration-smoke.json)
+checks preservation, new entries, storage and paired-run compatibility; it is far
+too small and cutoff-heavy to infer stronger play.
+
+The search table now has bounded FIFO replacement (40,000 entries by default),
+configurable separately from the move-memory soft limit. Forked workers retain
+those limits. Evaluation visits occupied squares and counts same-file pawns with
+bitboards rather than rebuilding a list for each pawn. A local 5-repeat A/B on
+four positions found a small speedup with equal selected moves and node counts;
+100 generated positions had equal evaluations. See the [raw report](../benchmarks/evaluation-ab.json)
+and retained reference methods in [the A/B harness](../benchmarks/compare_evaluation.py).
+These measurements are machine-specific and do not measure chess strength.

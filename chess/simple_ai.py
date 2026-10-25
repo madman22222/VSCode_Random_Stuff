@@ -6,8 +6,10 @@ from __future__ import annotations
 import chess  # type: ignore
 import chess.pgn  # type: ignore
 import time
+from collections import OrderedDict
 import os
 from app_paths import data_dir
+from learning_keys import position_key, from_fen
 from typing import Optional
 
 try:
@@ -61,7 +63,8 @@ class SimpleAI:
         self.depth = depth
         self.nodes_searched = 0
         self.last_move_metrics = {}
-        self.transposition_table = {}
+        self.transposition_table = OrderedDict()
+        self.transposition_limit = 40000
         self.killers = {}
         self.history = {}
         self.learning_db = {}
@@ -81,38 +84,38 @@ class SimpleAI:
         # Pruning controls
         self.learning_max_entries = 50000  # soft cap
         self.learning_min_keep = 40000     # target after prune
-        self.learning_version = 2          # format version for meta embedding
+        self.learning_version = 3          # format version for meta embedding
         self._last_prune_time = 0.0
     def fork(self, learning=True):
         """Independent search state with a frozen copy of move memory."""
         import copy
         ai = SimpleAI(self.depth, self._learning_path, load_learning=False)
         ai.learning_db = copy.deepcopy(self.learning_db) if learning else {}
+        ai.load_error = getattr(self, "load_error", None) if learning else None
         ai.use_learning = self.use_learning if learning else False
         ai.compress_learning = self.compress_learning
+        ai.transposition_limit = self.transposition_limit
+        ai.learning_max_entries = self.learning_max_entries
+        ai.learning_min_keep = self.learning_min_keep
         ai.use_outcome_scoring = self.use_outcome_scoring if learning else False
         return ai
 
     def _load_learning_db(self) -> None:
+        from data_validation import read_json, learning_records
+        self.load_error = None
+        path = self._learning_path_gz if os.path.exists(self._learning_path_gz) else self._learning_path
+        if not os.path.exists(path):
+            return
         try:
-            import json, gzip
-            data = None
-            if os.path.exists(self._learning_path_gz):
-                with gzip.open(self._learning_path_gz, 'rt', encoding='utf-8') as f:
-                    data = json.load(f)
-            elif os.path.exists(self._learning_path):
-                with open(self._learning_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-            if isinstance(data, dict):
-                # Support legacy (flat dict) or new {'meta':..., 'data':{}}
-                if 'meta' in data and 'data' in data and isinstance(data['data'], dict):
-                    self.learning_db = data['data']
-                    self.use_outcome_scoring = bool(data['meta'].get('outcome_scoring', False))
-                else:
-                    self.learning_db = data
-            debug(f"Loaded learning DB entries: {len(self.learning_db)}")
-        except Exception:
+            data = read_json(path)
+            self.learning_db = learning_records(data)
+            if isinstance(data.get('meta'), dict):
+                self.use_outcome_scoring = bool(data['meta'].get('outcome_scoring', False)) and data['meta'].get('version') == 3
+        except (OSError, ValueError, TypeError, EOFError) as exc:
             self.learning_db = {}
+            self.load_error = f'Cannot read learning data: {exc}. Original file preserved; use backups to recover.'
+            warn(self.load_error)
+
     def acquire_writer(self):
         from learning_storage import writer_lease
         if self._writer_lease is None:
@@ -133,6 +136,8 @@ class SimpleAI:
             return self._write_learning_db()
 
     def _write_learning_db(self) -> None:
+        if getattr(self, 'load_error', None):
+            raise ValueError(self.load_error)
         import json
         import gzip
         import tempfile
@@ -302,8 +307,7 @@ class SimpleAI:
         if board.is_checkmate(): return -9999999
         if board.is_stalemate() or board.is_insufficient_material(): return 0
         phase = self.game_phase(board); score = 0
-        for square in chess.SQUARES:
-            piece = board.piece_at(square)
+        for square, piece in board.piece_map().items():
             if piece:
                 value = self.PIECE_VALUES[piece.piece_type]
                 pos_value = self.get_piece_square_value(piece, square, phase)
@@ -346,8 +350,8 @@ class SimpleAI:
             pawn_file = chess.square_file(pawn_square); pawn_rank = chess.square_rank(pawn_square)
             if self.is_passed_pawn(board, pawn_square, color):
                 score += 20 + (pawn_rank*10) if color==chess.WHITE else 20 + ((7-pawn_rank)*10)
-            same_file = [sq for sq in pawns if chess.square_file(sq) == pawn_file]
-            if len(same_file) > 1: score -= 15
+            same_file_count = chess.popcount(board.pawns & board.occupied_co[color] & chess.BB_FILES[pawn_file])
+            if same_file_count > 1: score -= 15
             if self.is_isolated_pawn(board, pawn_square, color): score -= 20
             if self.is_backward_pawn(board, pawn_square, color): score -= 10
         return score
@@ -435,8 +439,10 @@ class SimpleAI:
                 break
         flag = 'UPPER' if best_score <= original_alpha else (
             'LOWER' if best_score >= beta else 'EXACT')
-        self.transposition_table[board.fen()] = (
-            best_score, depth, flag, best_move.uci() if best_move else None)
+        key = board.fen()
+        if key not in self.transposition_table and len(self.transposition_table) >= self.transposition_limit:
+            self.transposition_table.popitem(last=False)
+        self.transposition_table[key] = (best_score, depth, flag, best_move.uci() if best_move else None)
         return best_score
 
     def choose_move(self, board: chess.Board):
@@ -445,7 +451,7 @@ class SimpleAI:
     def _order_moves(self, board, moves, depth):
         # Build position keys once rather than once for every candidate move.
         fen = board.fen()
-        fen_key = board.board_fen()
+        fen_key = from_fen(fen)
         entry = self.transposition_table.get(fen)
         killers = self.killers.get(depth, [])
         def score_move(move):
@@ -479,12 +485,12 @@ class SimpleAI:
         start = time.monotonic()
         self.nodes_searched = 0
         self._node_limit = node_limit
-        if len(self.transposition_table) > 40000:
-            self.transposition_table.clear()
+        while len(self.transposition_table) > self.transposition_limit:
+            self.transposition_table.popitem(last=False)
         best_move = moves[0]
         completed_depth = 0
         completed_score = None
-        fen_key = board.board_fen()
+        fen_key = position_key(board)
         priors = ({move.uci(): self.outcome_adjustment(fen_key, move.uci()) for move in moves}
                   if self.use_learning and self.use_outcome_scoring else {})
         active_prior = any(priors.values())
@@ -518,7 +524,7 @@ class SimpleAI:
             self._deadline = None
             self._node_limit = None
         if record:
-            self._log_choice(board.board_fen(), best_move.uci(), board.turn)
+            self._log_choice(position_key(board), best_move.uci(), board.turn)
         self.last_move_metrics = {
             'move': best_move.uci(), 'depth': completed_depth,
             'nodes': self.nodes_searched, 'branching': len(moves),

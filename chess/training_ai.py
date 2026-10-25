@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import chess
+from learning_keys import position_key
 from simple_ai import SimpleAI
 from logger import info, error
 
@@ -78,15 +79,22 @@ class TrainingAI:
         self._started = None
         self._lock = threading.RLock()
         self._session_games = 0
+        self._recent_results = []
+        self._saved_games = 0
         self._position_count = len({key.split('|', 1)[0] for key in self.ai.learning_db})
         self.state_path = self.ai._learning_path + '.training.json'
         if resume:
             self._load_progress()
+            self._saved_games = self.games_played
+        self._elapsed_at_start = self._elapsed
 
     def _load_progress(self):
         if not Path(self.state_path).exists():
             return
-        data = json.loads(Path(self.state_path).read_text(encoding='utf-8'))
+        from data_validation import read_json, training_checkpoint
+        data = training_checkpoint(read_json(self.state_path))
+        if not isinstance(data, dict) or data.get('version', 1) != 1:
+            raise ValueError('Unsupported training checkpoint version')
         results = data['results']
         if any(type(results.get(key)) is not int or results[key] < 0 for key in self.results):
             raise ValueError('Invalid training checkpoint counters')
@@ -104,9 +112,11 @@ class TrainingAI:
     def snapshot(self):
         with self._lock:
             elapsed = self._elapsed + (time.monotonic() - self._started if self._started else 0)
-            return {'games': self.games_played, 'session_games': self._session_games,
+            return {'version': 1, 'games': self.games_played, 'session_games': self._session_games,
                     'results': dict(self.results), 'move_limit_draws': self.move_limit_draws,
                     'current_moves': self.current_move_count, 'elapsed_seconds': elapsed,
+                    'session_elapsed_seconds': max(0, elapsed - self._elapsed_at_start),
+                    'saved_games': self._saved_games, 'recent_results': list(self._recent_results),
                     'positions': self._position_count,
                     'learned_moves': len(self.ai.learning_db), 'state': self.state,
                     'error': str(self.last_error) if self.last_error else None,
@@ -114,9 +124,28 @@ class TrainingAI:
                                  'exploration': self.exploration_rate,
                                  'varied_starts': self.varied_starts, 'seed': self.seed}}
 
+    def progress_summary(self, snap=None):
+        snap = snap or self.snapshot()
+        count, elapsed = snap['session_games'], snap['session_elapsed_seconds']
+        rate = 60 * count / elapsed if elapsed > 0 else 0
+        text = f"{count} this run · {rate:.1f} games/min · {snap['saved_games']} checkpointed"
+        if self.max_games and count >= 2 and rate > 0:
+            remaining = max(0, self.max_games - count) / rate
+            text += f" · ~{remaining:.1f} min left (estimate)"
+        recent = snap['recent_results']
+        if recent:
+            text += f"\nLast {len(recent)}: W{recent.count('white')} B{recent.count('black')} D{recent.count('draw')}"
+        return text
+
     def _checkpoint(self):
         self.ai._save_learning_db()
-        atomic_json(self.state_path, self.snapshot())
+        previous = self._saved_games
+        self._saved_games = self.games_played
+        try:
+            atomic_json(self.state_path, self.snapshot())
+        except Exception:
+            self._saved_games = previous
+            raise
 
     def start(self):
         if self.thread and self.thread.is_alive():
@@ -125,7 +154,7 @@ class TrainingAI:
         try:
             if not self.resuming:
                 atomic_json(self.ai._learning_path + '.previous.json', {
-                    'meta': {'version': 2, 'outcome_scoring': self.ai.use_outcome_scoring},
+                    'meta': {'version': self.ai.learning_version, 'outcome_scoring': self.ai.use_outcome_scoring},
                     'data': self.ai.learning_db})
         except Exception:
             self.ai.release_writer()
@@ -171,7 +200,7 @@ class TrainingAI:
                     if self.current_move_count < 20 and rng.random() < self.exploration_rate:
                         choices = self.ai._order_moves(board, list(board.legal_moves), 1)[:4]
                         move = rng.choice(choices)
-                        self.ai._log_choice(board.board_fen(), move.uci(), board.turn)
+                        self.ai._log_choice(position_key(board), move.uci(), board.turn)
                     else:
                         move = self.ai.choose_move_iterative(board, self.move_time_limit)
                     if move is None or move not in board.legal_moves:
@@ -188,6 +217,7 @@ class TrainingAI:
                     self.ai.finalize_game(winner)
                     self._position_count = len({key.split('|', 1)[0] for key in self.ai.learning_db})
                     self.results[winner] += 1
+                    self._recent_results = (self._recent_results + [winner])[-20:]
                     self.games_played += 1
                     self._session_games += 1
                     if outcome is None:
@@ -247,10 +277,11 @@ class BenchmarkRunner:
             raise ValueError('Unknown comparison opponent')
         self.baseline = ai.fork(learning=False)
         if opponent == 'previous':
-            previous = json.loads(Path(ai._learning_path + '.previous.json').read_text(encoding='utf-8'))
-            self.baseline.learning_db = previous['data']
+            from data_validation import read_json, learning_records
+            previous = read_json(ai._learning_path + '.previous.json')
+            self.baseline.learning_db = learning_records(previous)
             self.baseline.use_learning = True
-            self.baseline.use_outcome_scoring = bool(previous.get('meta', {}).get('outcome_scoring', False))
+            self.baseline.use_outcome_scoring = bool(previous.get('meta', {}).get('outcome_scoring', False)) and previous.get('meta', {}).get('version') == 3
         self.opponent = opponent
         self.experimental = experimental
         self._pair_scores = []
@@ -436,5 +467,7 @@ class ComparisonSeries:
                 self.current.result['state'] = 'cancelled'
             try:
                 atomic_json(self.result_path, self.result)
+                history = Path(self.result_path).parent / 'comparison-history'
+                atomic_json(history / f'comparison-{time.time_ns()}.json', self.result)
             except Exception as exc:
                 self.last_error = exc

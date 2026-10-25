@@ -1,0 +1,11 @@
+# Reviewed runtime/build set. Update only with source and frozen-package checks.
+python-chess==1.999
+chess==1.11.2
+Pillow==12.3.0
+pyinstaller==6.22.3
+altgraph==0.17.5
+pyinstaller-hooks-contrib==2026.9
+pefile==2024.8.26
+pywin32-ctypes==0.2.3
+packaging==26.3
+setuptools==84.1.0

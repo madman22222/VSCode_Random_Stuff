@@ -30,6 +30,8 @@ for the ready-to-run app. macOS/Linux users currently run from source.
 - Themes, larger text, high contrast, image/symbol/letter pieces, and keyboard play.
 - A training dashboard with checkpoints, resume, exploration, and varied openings.
 - Paired comparisons against untrained and previous versions, with uncertainty ranges.
+- Profile backup/restore with rollback, named training profiles, and comparison history.
+- FEN study, reviewed PGN export, local puzzle packs, diagnostics, and explicit update checks.
 - Optional Stockfish tools, PGN conversion, and a console companion.
 
 Training records move outcomes; this is not a neural network. Difficulty settings

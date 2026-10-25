@@ -1,5 +1,4 @@
 """Configuration manager for persisting user preferences."""
-import json
 import os
 from app_paths import data_dir
 from typing import Any, Dict
@@ -10,11 +9,13 @@ class ConfigManager:
     
     def __init__(self, config_file=None):
         self.config_file = config_file or os.fspath(data_dir() / 'chess_config.json')
+        self.load_error = None
         self.config: Dict[str, Any] = self._load_config()
     
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from file or return defaults."""
         default_config = {
+            'schema_version': 1,
             'ai_depth': 3,
             'engine_path': '',
             'window_width': 900,
@@ -41,23 +42,29 @@ class ConfigManager:
         
         if os.path.exists(self.config_file):
             try:
-                with open(self.config_file, 'r') as f:
-                    loaded = json.load(f)
-                    # Merge with defaults to handle new keys
-                    default_config.update(loaded)
-                    return default_config
+                from data_validation import read_json, configuration
+                loaded = configuration(read_json(self.config_file))
+                # Merge with defaults to handle new keys
+                default_config.update(loaded)
+                return default_config
             except Exception as e:
-                print(f"Error loading config: {e}")
+                self.load_error = f"Cannot load preferences: {e}. Original file preserved."
+                from logger import warn
+                warn(self.load_error)
                 return default_config
         return default_config
     
     def save_config(self) -> None:
         """Save current configuration to file."""
         from training_ai import atomic_json
+        if self.load_error:
+            raise ValueError(self.load_error)
         try:
             atomic_json(self.config_file, self.config)
         except (OSError, TypeError, ValueError) as exc:
-            print(f'Error saving config: {exc}')
+            from logger import error
+            error(f'Error saving config: {exc}')
+            raise
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value."""
@@ -65,8 +72,13 @@ class ConfigManager:
     
     def set(self, key: str, value: Any) -> None:
         """Set configuration value and save."""
+        previous = dict(self.config)
         self.config[key] = value
-        self.save_config()
+        try:
+            self.save_config()
+        except Exception:
+            self.config = previous
+            raise
     
     def update_statistics(self, result: str) -> None:
         """Update game statistics. result: 'white', 'black', 'draw'"""

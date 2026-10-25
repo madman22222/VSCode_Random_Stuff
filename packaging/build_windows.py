@@ -56,7 +56,7 @@ def add_notices(app):
     sources.mkdir()
     notes = ['Third-party components bundled with Chess Studio.',
              'Original licenses are preserved below and in package metadata.', '']
-    for name in ('python-chess', 'chess', 'Pillow', 'pyinstaller'):
+    for name in ('python-chess', 'chess', 'Pillow', 'pyinstaller', 'altgraph', 'pyinstaller-hooks-contrib', 'pefile', 'pywin32-ctypes', 'packaging', 'setuptools'):
         distribution = importlib.metadata.distribution(name)
         notes.append(f'{name} {distribution.version}')
         for file in distribution.files or []:
@@ -82,7 +82,8 @@ def add_notices(app):
             if not filename or not path.is_file():
                 continue
             if (path.suffix in ('.py', '.md', '.txt', '.spec', '.yml', '.yaml', '.bat', '.png')
-                    or path.name in ('.gitignore', '.gitattributes', 'LICENSE')):
+                    or path.name in ('.gitignore', '.gitattributes', 'LICENSE')
+                    or path.suffix == '.json' and (filename.startswith('chess/assets/') or filename.startswith('benchmarks/'))):
                 archive.write(path, filename)
 
 
@@ -107,7 +108,7 @@ def main():
     revision = args.version or subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     info = {'application': 'Chess Studio', 'revision': revision, 'platform': 'Windows x64',
             'python': platform.python_version(), 'packages': {
-                name: importlib.metadata.version(name) for name in ('python-chess', 'chess', 'Pillow', 'pyinstaller')}}
+                name: importlib.metadata.version(name) for name in ('python-chess', 'chess', 'Pillow', 'pyinstaller', 'altgraph', 'pyinstaller-hooks-contrib', 'pefile', 'pywin32-ctypes', 'packaging', 'setuptools')}}
     (app / 'BUILD_INFO.json').write_text(json.dumps(info, indent=2), encoding='utf-8')
     add_notices(app)
     zip_path = output / 'ChessStudio-Windows.zip'

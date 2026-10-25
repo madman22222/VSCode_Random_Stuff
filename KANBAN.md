@@ -10,43 +10,44 @@ retroactive duplicate issues.
 
 ## Current status
 
-Last checked against repository issues and merged pull requests: **October 25, 2026**.
+Updated October 25, 2026: **17 improvement issues implemented and validated** in
+[PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42). The board now
+contains **43 delivered feature/planning cards** (26 earlier cards plus 17 improvements).
+No implementation or review task is currently in progress.
 
-| Backlog | Ready | In progress | Review / test | Done |
-| --- | --- | --- | --- | --- |
-| 16 proposed improvements | 4 next tasks | 0 | 0 | 26 delivered feature/planning cards |
+Validation: **103 tests** passed on a Linux virtual desktop and in Windows source
+checks; Linux Python 3.10/3.11 CI also passed. All **11 diagnostic groups** passed.
+The actual extracted Windows ZIP passed frozen diagnostics and CLI checks with
+Python removed from the child PATH. Evidence:
+[source/desktop CI](https://github.com/madman22222/VSCode_Random_Stuff/actions/runs/40222207466),
+[portable build/smoke CI](https://github.com/madman22222/VSCode_Random_Stuff/actions/runs/40222207716).
+See [implementation details and limits](chess/BACKLOG_PROGRESS.md).
 
-All improvement issues **#9–#28 remain open**. No improvement has been marked
-started or complete without implementation evidence. Completed cards include
-25 delivered feature groups plus the merged planning-board setup in PR #29.
-
-### Next tasks
-
-1. [#9 — Back up and restore the complete data profile](https://github.com/madman22222/VSCode_Random_Stuff/issues/9)
-2. [#10 — Add diagnostics and log export](https://github.com/madman22222/VSCode_Random_Stuff/issues/10)
-3. [#11 — Check Windows DPI scaling and small-window layouts](https://github.com/madman22222/VSCode_Random_Stuff/issues/11)
-4. [#12 — Establish performance baselines before optimization](https://github.com/madman22222/VSCode_Random_Stuff/issues/12)
+**Three cards remain open:** #11 needs real Windows DPI/driver checks; #22 needs
+hands-on screen-reader/accessibility verification; #26 needs native package work
+and owner-provided signing resources. Plans and partial automated checks do not
+count as completing those cards. No chess-strength improvement is claimed.
 
 ## Board
 
-| Backlog (16) | Ready (4) | In progress (0) | Review / test (0) | Done (26) |
+| Backlog / verification (3) | Ready (0) | In progress (0) | Review / test (0) | Done (43) |
 | --- | --- | --- | --- | --- |
-| **P1** [#13 Validate and version learning and configuration imports](https://github.com/madman22222/VSCode_Random_Stuff/issues/13) | **P1** [#9 Add one-click backup and restore for the complete data profile](https://github.com/madman22222/VSCode_Random_Stuff/issues/9) | No implementation started | No pending implementation | [Repair GUI startup and restore the dedicated AI/training modules](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
-| **P1** [#14 Expand chess-rule and cancellation regression coverage](https://github.com/madman22222/VSCode_Random_Stuff/issues/14) | **P1** [#10 Add a diagnostics and log export panel](https://github.com/madman22222/VSCode_Random_Stuff/issues/10) | — | — | [Fix search depth, move budgets, timeout board restoration, and evaluation errors](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
-| **P2** [#15 Make training progress easier to understand](https://github.com/madman22222/VSCode_Random_Stuff/issues/15) | **P1** [#11 Validate Windows display scaling and small-window layouts](https://github.com/madman22222/VSCode_Random_Stuff/issues/11) | — | — | [Record self-play outcomes; stop at requested game counts and save/reload reliably](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
-| **P2** [#16 Save named training profiles and comparison history](https://github.com/madman22222/VSCode_Random_Stuff/issues/16) | **P1** [#12 Establish reproducible search and rendering performance benchmarks](https://github.com/madman22222/VSCode_Random_Stuff/issues/12) | — | — | [Fix the test runner and establish source CI](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
-| **P2** [#17 Evaluate stronger move-memory keys with a compatibility migration](https://github.com/madman22222/VSCode_Random_Stuff/issues/17) | — | — | — | [Make the board square and responsive with scaled images and correct hit detection](https://github.com/madman22222/VSCode_Random_Stuff/pull/4) |
-| **P2** [#18 Tune search only after baseline measurements and tactical checks](https://github.com/madman22222/VSCode_Random_Stuff/issues/18) | — | — | — | [Replace the scrolling control canvas to remove its ghosting/redraw path](https://github.com/madman22222/VSCode_Random_Stuff/pull/4) |
-| **P2** [#19 Improve bounded transposition and learning-memory management](https://github.com/madman22222/VSCode_Random_Stuff/issues/19) | — | — | — | [Apply consistent tabs, themes, spacing, and debounced resizing](https://github.com/madman22222/VSCode_Random_Stuff/pull/4) |
-| **P2** [#20 Expand tactical practice and support validated puzzle packs](https://github.com/madman22222/VSCode_Random_Stuff/issues/20) | — | — | — | [Add guided modes, difficulty, human Black, and Watch AI start/pause](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
-| **P2** [#21 Improve review explanations and annotated PGN export](https://github.com/madman22222/VSCode_Random_Stuff/issues/21) | — | — | — | [Add background hints, thinking status, legal/illegal feedback, and draw outcomes](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
-| **P2** [#22 Audit keyboard navigation and assistive-technology support](https://github.com/madman22222/VSCode_Random_Stuff/issues/22) | — | — | — | [Add paired Undo, completed-game memory/statistics rollback, and custom-start PGN support](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
-| **P2** [#23 Separate controller UI construction from task and game services](https://github.com/madman22222/VSCode_Random_Stuff/issues/23) | — | — | — | [Add the training dashboard with Start, Stop and save, Resume, and visible progress/errors](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
-| **P2** [#24 Make portable builds more reproducible and validate dependency updates](https://github.com/madman22222/VSCode_Random_Stuff/issues/24) | — | — | — | [Add varied openings, seeded exploration, persistent counters, and training settings](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
-| **P2** [#25 Add an update notification and data-safe upgrade walkthrough](https://github.com/madman22222/VSCode_Random_Stuff/issues/25) | — | — | — | [Isolate background searches, discard stale results, and queue UI updates on the main thread](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
-| **P3** [#26 Explore signed Windows releases and macOS/Linux portable packages](https://github.com/madman22222/VSCode_Random_Stuff/issues/26) | — | — | — | [Add atomic configuration writes, OS writer leases, bounded search-cache cleanup, and cached ordering keys](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
-| **P3** [#27 Add local FEN setup and position-analysis tools](https://github.com/madman22222/VSCode_Random_Stuff/issues/27) | — | — | — | [Add paired baseline comparisons and the Windows source launcher](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
-| **P2** [#28 Improve issue reporting and contribution onboarding](https://github.com/madman22222/VSCode_Random_Stuff/issues/28) | — | — | — | [Add seven tactical practice puzzles, progressive hints, and saved solved progress](https://github.com/madman22222/VSCode_Random_Stuff/pull/6) |
+| **P1** [#11 Validate Windows display scaling and small-window layouts](https://github.com/madman22222/VSCode_Random_Stuff/issues/11) — external verification pending | — | — | — | [Repair GUI startup and restore the dedicated AI/training modules](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
+| **P2** [#22 Audit keyboard navigation and assistive-technology support](https://github.com/madman22222/VSCode_Random_Stuff/issues/22) — external verification pending | — | — | — | [Fix search depth, move budgets, timeout board restoration, and evaluation errors](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
+| **P3** [#26 Explore signed Windows releases and macOS/Linux portable packages](https://github.com/madman22222/VSCode_Random_Stuff/issues/26) — external verification pending | — | — | — | [Record self-play outcomes; stop at requested game counts and save/reload reliably](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
+| — | — | — | — | [Fix the test runner and establish source CI](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
+| — | — | — | — | [Make the board square and responsive with scaled images and correct hit detection](https://github.com/madman22222/VSCode_Random_Stuff/pull/4) |
+| — | — | — | — | [Replace the scrolling control canvas to remove its ghosting/redraw path](https://github.com/madman22222/VSCode_Random_Stuff/pull/4) |
+| — | — | — | — | [Apply consistent tabs, themes, spacing, and debounced resizing](https://github.com/madman22222/VSCode_Random_Stuff/pull/4) |
+| — | — | — | — | [Add guided modes, difficulty, human Black, and Watch AI start/pause](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
+| — | — | — | — | [Add background hints, thinking status, legal/illegal feedback, and draw outcomes](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
+| — | — | — | — | [Add paired Undo, completed-game memory/statistics rollback, and custom-start PGN support](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
+| — | — | — | — | [Add the training dashboard with Start, Stop and save, Resume, and visible progress/errors](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
+| — | — | — | — | [Add varied openings, seeded exploration, persistent counters, and training settings](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
+| — | — | — | — | [Isolate background searches, discard stale results, and queue UI updates on the main thread](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
+| — | — | — | — | [Add atomic configuration writes, OS writer leases, bounded search-cache cleanup, and cached ordering keys](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
+| — | — | — | — | [Add paired baseline comparisons and the Windows source launcher](https://github.com/madman22222/VSCode_Random_Stuff/pull/5) |
+| — | — | — | — | [Add seven tactical practice puzzles, progressive hints, and saved solved progress](https://github.com/madman22222/VSCode_Random_Stuff/pull/6) |
 | — | — | — | — | [Add budgeted background game review and isolated position navigation](https://github.com/madman22222/VSCode_Random_Stuff/pull/6) |
 | — | — | — | — | [Add validated atomic unfinished-game recovery with paused restoration](https://github.com/madman22222/VSCode_Random_Stuff/pull/6) |
 | — | — | — | — | [Add larger text, contrast, piece styles, keyboard focus, and accessible board input](https://github.com/madman22222/VSCode_Random_Stuff/pull/6) |
@@ -57,6 +58,23 @@ started or complete without implementation evidence. Completed cards include
 | — | — | — | — | [Test the extracted Windows bundle without Python on PATH and publish only after success](https://github.com/madman22222/VSCode_Random_Stuff/pull/7) |
 | — | — | — | — | [Refresh all user/developer/asset documentation and add the portable build/release guide](https://github.com/madman22222/VSCode_Random_Stuff/pull/8) |
 | — | — | — | — | [Create the populated Kanban, prioritized issues, acceptance checklists, and README link](https://github.com/madman22222/VSCode_Random_Stuff/pull/29) |
+| — | — | — | — | **P1** [#9 Add one-click backup and restore for the complete data profile](https://github.com/madman22222/VSCode_Random_Stuff/issues/9) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P1** [#10 Add a diagnostics and log export panel](https://github.com/madman22222/VSCode_Random_Stuff/issues/10) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P1** [#12 Establish reproducible search and rendering performance benchmarks](https://github.com/madman22222/VSCode_Random_Stuff/issues/12) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P1** [#13 Validate and version learning and configuration imports](https://github.com/madman22222/VSCode_Random_Stuff/issues/13) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P1** [#14 Expand chess-rule and cancellation regression coverage](https://github.com/madman22222/VSCode_Random_Stuff/issues/14) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P2** [#15 Make training progress easier to understand](https://github.com/madman22222/VSCode_Random_Stuff/issues/15) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P2** [#16 Save named training profiles and comparison history](https://github.com/madman22222/VSCode_Random_Stuff/issues/16) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P2** [#17 Evaluate stronger move-memory keys with a compatibility migration](https://github.com/madman22222/VSCode_Random_Stuff/issues/17) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P2** [#18 Tune search only after baseline measurements and tactical checks](https://github.com/madman22222/VSCode_Random_Stuff/issues/18) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P2** [#19 Improve bounded transposition and learning-memory management](https://github.com/madman22222/VSCode_Random_Stuff/issues/19) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P2** [#20 Expand tactical practice and support validated puzzle packs](https://github.com/madman22222/VSCode_Random_Stuff/issues/20) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P2** [#21 Improve review explanations and annotated PGN export](https://github.com/madman22222/VSCode_Random_Stuff/issues/21) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P2** [#23 Separate controller UI construction from task and game services](https://github.com/madman22222/VSCode_Random_Stuff/issues/23) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P2** [#24 Make portable builds more reproducible and validate dependency updates](https://github.com/madman22222/VSCode_Random_Stuff/issues/24) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P2** [#25 Add an update notification and data-safe upgrade walkthrough](https://github.com/madman22222/VSCode_Random_Stuff/issues/25) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P3** [#27 Add local FEN setup and position-analysis tools](https://github.com/madman22222/VSCode_Random_Stuff/issues/27) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | **P2** [#28 Improve issue reporting and contribution onboarding](https://github.com/madman22222/VSCode_Random_Stuff/issues/28) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
 
 ## Priorities and recommended order
 
@@ -64,12 +82,10 @@ started or complete without implementation evidence. Completed cards include
 - **P2:** usability, maintainability, and improvements backed by measurements.
 - **P3:** optional expansion; confirm demand and costs before starting.
 
-Start with backup/restore (#9) and diagnostics (#10), then DPI verification (#11)
-and performance baselines (#12). Import validation (#13) should precede learning-key
-migration (#17). Profile/history work (#16) benefits from backups and schema checks.
-Search tuning (#18) and memory changes (#19) depend on baseline measurements (#12).
-Cross-platform/signing exploration (#26) should build on reproducible packaging (#24).
-Ready means a task is specified and recommended next; it does not mean it is underway.
+The 17 implementation cards are complete. The remaining work requires external verification/resources.
+For remaining work, use the [Windows/accessibility checklist](chess/MANUAL_VERIFICATION.md)
+and [platform/signing plan](packaging/PORTABILITY_PLAN.md). Dependencies and design
+tradeoffs for the implemented batch are in [the progress record](chess/BACKLOG_PROGRESS.md).
 
 ## Moving cards
 
@@ -96,6 +112,7 @@ automatically. Issue checklists track acceptance; the board tracks workflow stat
 | [#7](https://github.com/madman22222/VSCode_Random_Stuff/pull/7) | Self-contained Windows ZIP and tested release pipeline |
 | [#8](https://github.com/madman22222/VSCode_Random_Stuff/pull/8) | Documentation refresh |
 | [#29](https://github.com/madman22222/VSCode_Random_Stuff/pull/29) | Populated project Kanban, 20 improvement issues, and planning workflow |
+| [#42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) | 17 validated backlog improvements: profile safety, study/support tools, contextual memory, measured tuning and contribution guidance |
 
 Done means delivered in the cited merged PR, not proof of perfect behavior or
 increased chess strength. Future verification/enhancement cards intentionally build

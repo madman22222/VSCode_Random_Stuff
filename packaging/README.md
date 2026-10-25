@@ -73,3 +73,12 @@ latest-download link in the READMEs follows new releases automatically.
 Update `PORTABLE_README.txt` for instructions inside future ZIPs and
 `release-notes.md` for future release descriptions. Already published archives
 remain tied to their build revision; repository edits do not modify old ZIPs.
+
+## Dependency review and other platforms
+
+`constraints-build.txt` records the reviewed package set used for portable builds;
+Dependabot proposes updates for review. The existing source and extracted-bundle
+checks still gate publication. Update constraints and retained notices together.
+See [portability/signing plan](PORTABILITY_PLAN.md) for work that still needs native
+hosts and owner-provided signing accounts. No macOS/Linux portable release or
+signed Windows build is currently claimed.

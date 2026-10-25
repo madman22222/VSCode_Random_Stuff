@@ -60,6 +60,8 @@ class TestGameControllerMocked(unittest.TestCase):
 
     def setUp(self):
         """Set up mocks for tkinter widgets."""
+        from logger import setup_logging
+        setup_logging()  # Open the log before per-test builtins.open mocks.
         self.patcher_config = patch('game_controller.ConfigManager', return_value=None)
         self.patcher_config.start()
         self.addCleanup(self.patcher_config.stop)

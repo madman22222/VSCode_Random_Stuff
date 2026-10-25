@@ -1,2 +1,3 @@
+-c constraints-build.txt
 -r ../chess/requirements.txt
 pyinstaller==6.22.3

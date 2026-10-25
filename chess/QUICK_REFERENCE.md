@@ -70,3 +70,16 @@ Defaults live in portable `data/` or source `chess/`. Protected-folder fallback:
 filenames. An idle `.lock` file can remain; the active OS lock controls ownership.
 
 See [troubleshooting and upgrades](UPGRADES_GUIDE.md) before replacing data.
+
+## Support & study menu
+
+The header menu contains backup/restore, training profiles, comparison history,
+memory limits, FEN study/copy, reviewed PGN export, puzzle-pack import, diagnostics,
+and an explicit online release check. Restore keeps a rollback ZIP and closes the
+app; reopen afterward. Backups exclude logs and custom CLI files outside the data
+folder. See the [full guide](README.md#support-backups-and-study-tools).
+
+Training has Dashboard / Run settings / Memory subpages. Review offers Quick and
+Deeper budgets. Four extra themed puzzles are available through the bundled
+`assets/puzzles/studio-extras.json` example pack. New version-3 memory retains
+legacy counts but learns contextual records separately.

@@ -3,6 +3,7 @@ import math
 from pathlib import Path
 import json
 import chess
+from learning_keys import position_key
 from training_ai import atomic_json
 
 
@@ -33,6 +34,7 @@ class SessionStore:
             if move not in board.legal_moves:
                 raise ValueError('Saved game contains an illegal move')
             valid_log.add((board.board_fen(), uci, board.turn))
+            valid_log.add((position_key(board), uci, board.turn))
             board.push(move)
         if board.fen() != data['final_fen']:
             raise ValueError('Saved position does not match move history')
