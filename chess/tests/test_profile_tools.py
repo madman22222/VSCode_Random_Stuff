@@ -138,8 +138,9 @@ class ProfileTools(unittest.TestCase):
         with patch('data_validation.MAX_JSON_BYTES', 100):
             with self.assertRaises(ValueError):
                 read_json(path)
-        with self.assertRaises(ValueError):
-            configuration({'schema_version': 2})
+        for data in ({'schema_version': 2}, {'learning_profile': 123}, {'learning_profile': '../outside'}):
+            with self.assertRaises(ValueError):
+                configuration(data)
 
     def test_custom_start_review_export_preserves_original_and_mate_uncertainty(self):
         board = validated_fen('7k/8/5KQ1/8/8/8/8/8 w - - 0 1')

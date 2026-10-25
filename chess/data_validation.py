@@ -84,6 +84,13 @@ def configuration(data):
                         ('text_size', ('Normal', 'Large'))):
         if key in data and data[key] not in values:
             raise ValueError(f'Invalid preference: {key}')
+    if 'learning_profile' in data:
+        name = data['learning_profile']
+        if not isinstance(name, str):
+            raise ValueError('Invalid learning profile name')
+        if name:
+            from profile_store import profile_path
+            profile_path('.', name)
     if 'statistics' in data:
         if not isinstance(data['statistics'], dict) or any(type(v) is not int or v < 0
                                                          for v in data['statistics'].values()):
