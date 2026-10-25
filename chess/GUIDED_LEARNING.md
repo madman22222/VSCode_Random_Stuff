@@ -1,10 +1,11 @@
 # Guided learning and evaluation
 
-Practice offers six short lessons: checkmate, forks/pins, queen mates, rook mates,
-king-and-pawn play, and calculating replies. Continue recommended lesson selects
+Practice offers nine short lessons: checkmate, forks/pins, queen mates, rook mates,
+king-and-pawn play, calculating replies, opening principles, defense and endings
+with either color. Continue recommended lesson selects
 the first incomplete lesson and first unsolved exercise. Completion and selection
 persist in preferences. All puzzles also exposes the original seven exercises,
-the six new ones, and any imported packs.
+14 additional authored exercises, and any imported packs.
 
 For multi-move exercises, play your move and the authored opponent reply appears
 automatically. Restart cycles authored defenses. Hints progress from concepts to

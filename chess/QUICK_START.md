@@ -25,8 +25,9 @@ to resize the square board. Settings contains appearance and accessibility optio
 
 ## Practice and review
 
-**Play → Practice** offers seven puzzles with progressive hints and saved solved
-progress. **Play → Review** lets you navigate and analyze the game's positions.
+**Play → Practice** offers nine lessons/21 exercises, progressive hints, saved
+progress and Adaptive practice for scheduled reviews. **Play → Review** lets you
+analyze positions and open Coaching moments → Practice this idea.
 Review estimates come from short searches and can be wrong. Practice and review
 do not overwrite the actual game or train the engine.
 

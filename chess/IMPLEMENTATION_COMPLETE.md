@@ -12,8 +12,8 @@ or that the AI has a measured playing strength. For current instructions use the
   the scrolling canvas responsible for stale child-window redraws.
 - Background search, thinking status, hints, cancellation, and illegal-move feedback.
 - Paired Undo, completed-game learning/statistics rollback, and standard/custom-start PGN support.
-- Seven practice puzzles, progressive hints, and saved solved progress.
-- Position navigation and shallow background game review with cancellation.
+- Nine lessons/21 exercises, authored alternatives, progressive hints, saved progress and spaced reviews.
+- Position navigation, shallow background review, coaching moments linked to practice, and cancellation.
 - Atomic unfinished-game recovery, validated histories, and paused restoration.
 - Larger text, contrast, multiple piece styles, and keyboard board focus.
 - Cached unchanged piece/focus rendering and monotonic clock/timer fixes.

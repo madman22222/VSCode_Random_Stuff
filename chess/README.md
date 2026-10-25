@@ -188,6 +188,8 @@ The original seven hand-built puzzles cover mate in one for
 both colors, winning a queen, promoting before a pawn is lost, escaping check,
 saving an attacked queen, and preventing mate. Six new exercises cover forks, pins,
 queen/rook mates, king-and-pawn play, and calculation against different defenses.
+Eight additional exercises cover opening principles, defensive replies, reversed-color
+endings and avoiding stalemate.
 The opponent replies automatically; Restart cycles authored defenses. Choose a
 lesson or Continue recommended lesson; solved progress and lesson selection are saved.
 See [guided learning and pack version 2](GUIDED_LEARNING.md). Legal alternatives that meet the

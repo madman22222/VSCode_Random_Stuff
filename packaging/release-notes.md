@@ -32,8 +32,8 @@ and PGN results/validation; adds resignation/local draw agreement and an origina
 tactical motif pack; and includes measured search draw-check optimization. See the
 reference review for PDF corrections and study/engine limits.
 
-New in this revision: six guided lessons, six multi-move exercises with automatic
-opponent replies and alternative branches, factual review notes with legal
+This revision includes nine guided lessons/21 exercises, automatic opponent
+replies and authored alternatives, factual review notes with legal
 continuations, and a 16-position independent comparison suite with per-game
 records. Training checkpoints now have a validated memory/progress recovery pair.
 Repeated training/resume/cancel tests and interrupted-save regressions are included.
