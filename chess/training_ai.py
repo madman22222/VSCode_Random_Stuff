@@ -1,16 +1,54 @@
-"""Self-play training with bounded games, clean shutdown and saved learning."""
+"""Background self-play, resumable statistics, and reproducible evaluation."""
 from __future__ import annotations
-
+import json
+import os
+from pathlib import Path
+import random
+import tempfile
 import threading
+import time
 import chess
 from simple_ai import SimpleAI
 from logger import info, error
 
 
+OPENINGS = (
+    'e2e4 e7e5 g1f3 b8c6 f1c4 g8f6',
+    'd2d4 d7d5 c2c4 e7e6 b1c3 g8f6',
+    'e2e4 c7c5 g1f3 d7d6 d2d4 c5d4',
+    'd2d4 g8f6 c2c4 g7g6 b1c3 f8g7',
+    'c2c4 e7e5 b1c3 g8f6 g2g3 d7d5',
+    'e2e4 e7e6 d2d4 d7d5 b1c3 g8f6',
+)
+
+
+def starting_board(rng, varied=True):
+    board = chess.Board()
+    if varied:
+        line = rng.choice(OPENINGS).split()
+        for uci in line[:rng.randint(2, len(line))]:
+            board.push_uci(uci)
+    return board
+
+
+def atomic_json(path, data):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            json.dump(data, stream, indent=2)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
 class TrainingAI:
     def __init__(self, ai_instance: SimpleAI, depth=3, batch_size=100,
                  export_interval=None, move_time_limit=0.25,
-                 max_games=0, max_moves=300):
+                 max_games=0, max_moves=300, exploration_rate=0.10,
+                 varied_starts=True, seed=42, resume=False):
         self.ai = ai_instance
         self.depth = max(1, int(depth))
         self.batch_size = max(1, int(batch_size))
@@ -18,77 +56,248 @@ class TrainingAI:
         self.move_time_limit = max(0.001, float(move_time_limit))
         self.max_games = max(0, int(max_games))
         self.max_moves = max(1, int(max_moves))
+        self.exploration_rate = float(exploration_rate)
+        if not 0 <= self.exploration_rate <= 1:
+            raise ValueError('Exploration must be between 0 and 1')
+        self.varied_starts = bool(varied_starts)
+        self.seed = seed
         self.games_played = 0
         self.results = {'white': 0, 'black': 0, 'draw': 0}
+        self.move_limit_draws = 0
         self.current_move_count = 0
         self.running = False
         self.thread = None
         self.last_error = None
+        self.state = 'idle'
         self._stop = threading.Event()
+        self._elapsed = 0.0
+        self._started = None
+        self._lock = threading.RLock()
+        self._session_games = 0
+        self._position_count = len({key.split('|', 1)[0] for key in self.ai.learning_db})
+        self.state_path = self.ai._learning_path + '.training.json'
+        if resume:
+            self._load_progress()
+
+    def _load_progress(self):
+        if not Path(self.state_path).exists():
+            return
+        data = json.loads(Path(self.state_path).read_text(encoding='utf-8'))
+        results = data['results']
+        if any(type(results.get(key)) is not int or results[key] < 0 for key in self.results):
+            raise ValueError('Invalid training checkpoint counters')
+        self.results = {key: results[key] for key in self.results}
+        self.games_played = sum(self.results.values())
+        self.move_limit_draws = int(data.get('move_limit_draws', 0))
+        self._elapsed = max(0.0, float(data.get('elapsed_seconds', 0)))
+        settings = data.get('settings', {})
+        self.depth = max(1, int(settings.get('depth', self.depth)))
+        self.move_time_limit = max(0.001, float(settings.get('move_ms', self.move_time_limit * 1000)) / 1000)
+        self.exploration_rate = float(settings.get('exploration', self.exploration_rate))
+        self.varied_starts = bool(settings.get('varied_starts', self.varied_starts))
+        self.seed = int(settings.get('seed', self.seed))
+
+    def snapshot(self):
+        with self._lock:
+            elapsed = self._elapsed + (time.monotonic() - self._started if self._started else 0)
+            return {'games': self.games_played, 'session_games': self._session_games,
+                    'results': dict(self.results), 'move_limit_draws': self.move_limit_draws,
+                    'current_moves': self.current_move_count, 'elapsed_seconds': elapsed,
+                    'positions': self._position_count,
+                    'learned_moves': len(self.ai.learning_db), 'state': self.state,
+                    'error': str(self.last_error) if self.last_error else None,
+                    'settings': {'depth': self.depth, 'move_ms': self.move_time_limit * 1000,
+                                 'exploration': self.exploration_rate,
+                                 'varied_starts': self.varied_starts, 'seed': self.seed}}
+
+    def _checkpoint(self):
+        self.ai._save_learning_db()
+        atomic_json(self.state_path, self.snapshot())
 
     def start(self):
         if self.thread and self.thread.is_alive():
             return
+        self.ai.acquire_writer()
         self._stop.clear()
         self.last_error = None
+        self._session_games = 0
         self.ai.depth = self.depth
         self.ai.defer_persistence = True
-        self.ai.persist_every_n = self.batch_size
+        # The trainer owns checkpoints so learning and progress save together.
+        self.ai.persist_every_n = self.batch_size + 1
         self.ai.export_readable_during_training = False
         self.ai._pending_games = 0
+        self._started = time.monotonic()
         self.running = True
+        self.state = 'running'
         self.thread = threading.Thread(target=self._training_loop, daemon=True)
         self.thread.start()
 
-    def stop(self):
+    def request_stop(self):
         self._stop.set()
+        if self.running:
+            self.state = 'saving'
+
+    def stop(self):
+        self.request_stop()
         if self.thread and self.thread is not threading.current_thread():
             self.thread.join()
-        self.running = False
 
     def _training_loop(self):
+        rng = random.Random(self.seed + self.games_played)
         try:
-            while not self._stop.is_set() and (
-                    not self.max_games or self.games_played < self.max_games):
-                board = chess.Board()
+            while not self._stop.is_set() and (not self.max_games or self._session_games < self.max_games):
+                board = starting_board(rng, self.varied_starts)
                 self.ai.game_log = []
                 self.ai.transposition_table.clear()
+                self.ai.history.clear()
+                self.ai.killers.clear()
                 self.current_move_count = 0
                 while (not board.is_game_over(claim_draw=True)
-                       and self.current_move_count < self.max_moves
-                       and not self._stop.is_set()):
-                    move = self.ai.choose_move_iterative(board, self.move_time_limit)
+                       and self.current_move_count < self.max_moves and not self._stop.is_set()):
+                    if self.current_move_count < 20 and rng.random() < self.exploration_rate:
+                        choices = self.ai._order_moves(board, list(board.legal_moves), 1)[:4]
+                        move = rng.choice(choices)
+                        self.ai._log_choice(board.board_fen(), move.uci(), board.turn)
+                    else:
+                        move = self.ai.choose_move_iterative(board, self.move_time_limit)
                     if move is None or move not in board.legal_moves:
                         raise RuntimeError('AI did not return a legal move')
                     board.push(move)
                     self.current_move_count += 1
                 if self._stop.is_set():
-                    # An interrupted game has no outcome to learn from.
                     self.ai.game_log = []
                     break
                 outcome = board.outcome(claim_draw=True)
                 winner = 'draw' if outcome is None or outcome.winner is None else (
                     'white' if outcome.winner == chess.WHITE else 'black')
-                self.ai.finalize_game(winner)
-                self.results[winner] += 1
-                self.games_played += 1
-                info(f'Game {self.games_played}: {winner}; '
-                     f'{self.current_move_count} half-moves; '
+                with self._lock:
+                    self.ai.finalize_game(winner)
+                    self._position_count = len({key.split('|', 1)[0] for key in self.ai.learning_db})
+                    self.results[winner] += 1
+                    self.games_played += 1
+                    self._session_games += 1
+                    if outcome is None:
+                        self.move_limit_draws += 1
+                info(f'Game {self.games_played}: {winner}; {self.current_move_count} half-moves; '
                      f'{len(self.ai.learning_db)} learned moves')
-                if (self.export_interval and self.games_played %
-                        (self.batch_size * self.export_interval) == 0):
-                    self.ai.export_readable_learning()
+                if self._session_games % self.batch_size == 0:
+                    self._checkpoint()
+                    self.ai._pending_games = 0
+                    if self.export_interval and (self._session_games // self.batch_size) % self.export_interval == 0:
+                        self.ai.export_readable_learning()
+            self.state = 'stopped' if self._stop.is_set() else 'completed'
         except Exception as exc:
             self.last_error = exc
+            self.state = 'error'
             error(f'Training failed: {exc}')
         finally:
+            self._elapsed += time.monotonic() - self._started
+            self._started = None
             try:
-                self.ai._save_learning_db()
+                self._checkpoint()
                 self.ai.export_readable_learning()
             except Exception as exc:
                 self.last_error = exc
+                self.state = 'error'
                 error(f'Could not save training: {exc}')
+            self.ai.release_writer()
             self.ai.defer_persistence = False
             self.ai.export_readable_during_training = False
             self.running = False
             info(f'Training stopped: {self.games_played} games; {self.results}')
+
+
+class BenchmarkRunner:
+    """Frozen learned engine vs the identical engine without move memory.
+
+    Paired games swap colors from the same opening with equal node/depth budgets.
+    No learning updates or gameplay files are written during evaluation.
+    """
+    def __init__(self, ai, games=4, depth=2, node_limit=500, max_moves=120, seed=2026):
+        if games < 2 or games % 2:
+            raise ValueError('Comparison games must be a positive even number')
+        self.candidate = ai.fork()
+        self.candidate.use_learning = True
+        self.baseline = ai.fork(learning=False)
+        self.games = games
+        self.depth = depth
+        self.node_limit = max(1, int(node_limit))
+        self.max_moves = max_moves
+        self.seed = seed
+        self.running = False
+        self.thread = None
+        self.last_error = None
+        self.result = {'wins': 0, 'losses': 0, 'draws': 0, 'move_limit_draws': 0,
+                       'completed': 0, 'requested': games, 'seed': seed,
+                       'depth': depth, 'nodes_per_move': self.node_limit,
+                       'max_plies': max_moves, 'memory_entries': len(self.candidate.learning_db),
+                       'score_percent': None, 'state': 'idle'}
+        self._stop = threading.Event()
+        self.result_path = ai._learning_path + '.benchmark.json'
+
+    def start(self):
+        if self.running:
+            return
+        self.running = True
+        self.result['state'] = 'running'
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def request_stop(self):
+        self._stop.set()
+
+    def stop(self):
+        self.request_stop()
+        if self.thread:
+            self.thread.join()
+
+    def _run(self):
+        rng = random.Random(self.seed)
+        try:
+            for pair in range(self.games // 2):
+                initial = starting_board(rng)
+                for candidate_color in (chess.WHITE, chess.BLACK):
+                    board = initial.copy()
+                    for ai in (self.candidate, self.baseline):
+                        ai.depth = self.depth
+                        ai.transposition_table.clear()
+                        ai.history.clear()
+                        ai.killers.clear()
+                    for ply in range(self.max_moves):
+                        if self._stop.is_set() or board.is_game_over(claim_draw=True):
+                            break
+                        ai = self.candidate if board.turn == candidate_color else self.baseline
+                        move = ai.choose_move_iterative(board, time_limit=5, record=False,
+                                                        node_limit=self.node_limit)
+                        if move is None:
+                            raise RuntimeError('Comparison engine returned no move')
+                        board.push(move)
+                    if self._stop.is_set():
+                        self.result['state'] = 'cancelled'
+                        return
+                    outcome = board.outcome(claim_draw=True)
+                    if outcome is None or outcome.winner is None:
+                        self.result['draws'] += 1
+                        self.result['move_limit_draws'] += int(outcome is None)
+                    elif outcome.winner == candidate_color:
+                        self.result['wins'] += 1
+                    else:
+                        self.result['losses'] += 1
+                    self.result['completed'] += 1
+                    n = self.result['completed']
+                    self.result['score_percent'] = round(100 * (
+                        self.result['wins'] + self.result['draws'] / 2) / n, 1)
+            self.result['state'] = 'completed'
+        except Exception as exc:
+            self.last_error = exc
+            self.result['state'] = 'error'
+            self.result['error'] = str(exc)
+        finally:
+            try:
+                atomic_json(self.result_path, self.result)
+            except Exception as exc:
+                self.last_error = exc
+                self.result['state'] = 'error'
+                self.result['error'] = str(exc)
+            self.running = False

@@ -148,6 +148,7 @@ class TestGameControllerMocked(unittest.TestCase):
         """Test clicking on own piece selects it."""
         controller = GameController(self.mock_root)
         
+        controller.play_mode = 'player_vs_player'
         # Click on white pawn at e2 (square 12)
         controller.on_click(chess.E2)
         self.assertIsNotNone(controller.selected)
@@ -157,6 +158,7 @@ class TestGameControllerMocked(unittest.TestCase):
         """Test clicking destination after selecting piece makes move."""
         controller = GameController(self.mock_root)
         
+        controller.play_mode = 'player_vs_player'
         # Select e2 pawn
         controller.selected = chess.E2
         

@@ -56,7 +56,7 @@ class SimpleAI:
         "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1": ["g8f6","d7d5","e7e6"],
         "rnbqkb1r/pppppppp/5n2/8/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 1 2": ["c2c4","g1f3"],
     }
-    def __init__(self, depth=3, learning_path=None):
+    def __init__(self, depth=3, learning_path=None, load_learning=True):
         self.depth = depth
         self.nodes_searched = 0
         self.last_move_metrics = {}
@@ -65,9 +65,11 @@ class SimpleAI:
         self.history = {}
         self.learning_db = {}
         self.game_log = []
+        self._writer_lease = None
         self._learning_path = os.fspath(learning_path) if learning_path is not None else os.path.join(os.path.dirname(__file__), 'ai_learn.json')
         self._learning_path_gz = self._learning_path + '.gz'
-        self._load_learning_db()
+        if load_learning:
+            self._load_learning_db()
         self.use_learning = True
         self.defer_persistence = False
         self.persist_every_n = 100
@@ -79,6 +81,15 @@ class SimpleAI:
         self.learning_min_keep = 40000     # target after prune
         self.learning_version = 2          # format version for meta embedding
         self._last_prune_time = 0.0
+    def fork(self, learning=True):
+        """Independent search state with a frozen copy of move memory."""
+        import copy
+        ai = SimpleAI(self.depth, self._learning_path, load_learning=False)
+        ai.learning_db = copy.deepcopy(self.learning_db) if learning else {}
+        ai.use_learning = self.use_learning if learning else False
+        ai.compress_learning = self.compress_learning
+        return ai
+
     def _load_learning_db(self) -> None:
         try:
             import json, gzip
@@ -98,7 +109,26 @@ class SimpleAI:
             debug(f"Loaded learning DB entries: {len(self.learning_db)}")
         except Exception:
             self.learning_db = {}
-    def _save_learning_db(self) -> None:
+    def acquire_writer(self):
+        from learning_storage import writer_lease
+        if self._writer_lease is None:
+            lease = writer_lease(self._learning_path)
+            lease.__enter__()
+            self._writer_lease = lease
+
+    def release_writer(self):
+        if self._writer_lease is not None:
+            self._writer_lease.__exit__(None, None, None)
+            self._writer_lease = None
+
+    def _save_learning_db(self):
+        from learning_storage import writer_lease
+        if self._writer_lease is not None:
+            return self._write_learning_db()
+        with writer_lease(self._learning_path):
+            return self._write_learning_db()
+
+    def _write_learning_db(self) -> None:
         import json
         import gzip
         import tempfile
@@ -147,7 +177,7 @@ class SimpleAI:
                 winrate = (w + 0.5*d)/tot if tot else 0.0
                 last = rec.get('ts', 0)
                 # Composite: prioritize low games & low winrate & old
-                score = (tot) * 0.6 + winrate * 100.0 * 0.3 + (now - last) * 0.1
+                score = (tot) * 0.6 + winrate * 100.0 * 0.3 - (now - last) * 0.1
                 victims.append((score, key))
             victims.sort()  # lowest first
             to_remove = [k for _, k in victims[:excess]]
@@ -163,44 +193,41 @@ class SimpleAI:
         except Exception:
             pass
     def finalize_game(self, result: str) -> None:
-        try:
-            if not self.game_log:
-                return
-            for fen_key, move_uci, color_to_move in self.game_log:
-                key = fen_key + '|' + move_uci
-                rec = self.learning_db.get(key) or {"w":0,"l":0,"d":0,"ts":0}
-                if result == 'draw':
-                    rec['d'] = rec.get('d',0) + 1
-                else:
-                    winner_is_white = (result == 'white')
-                    if winner_is_white == color_to_move:
-                        rec['w'] = rec.get('w',0) + 1
-                    else:
-                        rec['l'] = rec.get('l',0) + 1
-                rec['ts'] = int(time.time())  # update last touched timestamp
-                self.learning_db[key] = rec
-            self.game_log = []
-            # Prune if oversized before persistence
-            self._maybe_prune_learning()
-            if getattr(self, 'defer_persistence', False):
-                self._pending_games = int(getattr(self,'_pending_games',0)) + 1
-                threshold = int(getattr(self,'persist_every_n',100))
-                if self._pending_games >= max(1, threshold):
-                    self._save_learning_db()
-                    if bool(getattr(self,'export_readable_during_training',False)):
-                        try:
-                            self.export_readable_learning()
-                        except Exception:
-                            pass
-                    self._pending_games = 0
+        if not self.game_log:
+            return
+        for fen_key, move_uci, color_to_move in self.game_log:
+            key = fen_key + '|' + move_uci
+            rec = self.learning_db.get(key) or {"w":0,"l":0,"d":0,"ts":0}
+            if result == 'draw':
+                rec['d'] = rec.get('d',0) + 1
             else:
+                winner_is_white = (result == 'white')
+                if winner_is_white == color_to_move:
+                    rec['w'] = rec.get('w',0) + 1
+                else:
+                    rec['l'] = rec.get('l',0) + 1
+            rec['ts'] = int(time.time())  # update last touched timestamp
+            self.learning_db[key] = rec
+        self.game_log = []
+        # Prune if oversized before persistence
+        self._maybe_prune_learning()
+        if getattr(self, 'defer_persistence', False):
+            self._pending_games = int(getattr(self,'_pending_games',0)) + 1
+            threshold = int(getattr(self,'persist_every_n',100))
+            if self._pending_games >= max(1, threshold):
                 self._save_learning_db()
-                try:
-                    self.export_readable_learning()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                if bool(getattr(self,'export_readable_during_training',False)):
+                    try:
+                        self.export_readable_learning()
+                    except Exception:
+                        pass
+                self._pending_games = 0
+        else:
+            self._save_learning_db()
+            try:
+                self.export_readable_learning()
+            except Exception:
+                pass
     def export_readable_learning(self, path: Optional[str]=None) -> Optional[str]:
         try:
             import json, time
@@ -243,8 +270,8 @@ class SimpleAI:
             return 0
     def game_phase(self, board: chess.Board) -> int:
         total_material = sum(len(board.pieces(pt, chess.WHITE))+len(board.pieces(pt, chess.BLACK)) for pt in [chess.QUEEN,chess.ROOK,chess.BISHOP,chess.KNIGHT])
-        if len(board.move_stack) < 10: return 0
-        elif total_material <= 6: return 2
+        if total_material <= 6: return 2
+        elif len(board.move_stack) < 10: return 0
         else: return 1
     def get_piece_square_value(self, piece: chess.Piece, square: int, phase: int) -> int:
         sq = chess.square_mirror(square) if piece.color == chess.WHITE else square
@@ -333,6 +360,9 @@ class SimpleAI:
                     if color==chess.BLACK and fp_rank > pawn_rank: return True
         return False
     def _check_deadline(self):
+        limit = getattr(self, '_node_limit', None)
+        if limit is not None and self.nodes_searched >= limit:
+            raise TimeoutError('Search node budget reached')
         deadline = getattr(self, '_deadline', None)
         if deadline is not None and time.monotonic() >= deadline:
             raise TimeoutError('Search time budget reached')
@@ -396,21 +426,24 @@ class SimpleAI:
     def choose_move(self, board: chess.Board):
         return self.choose_move_iterative(board, time_limit=5.0)
 
-    def _order_moves(self, board: chess.Board, moves: list[chess.Move], depth: int) -> list[chess.Move]:
-        def score_move(m: chess.Move) -> int:
-            s = self._move_score(board, m) + self.history.get(m.uci(),0)
-            killers = self.killers.get(depth, [])
-            if m.uci() in killers: s += 10000
-            try:
-                fen = board.fen(); entry = self.transposition_table.get(fen)
-                if entry and entry[3] == m.uci(): s += 20000
-            except Exception: pass
+    def _order_moves(self, board, moves, depth):
+        # Build position keys once rather than once for every candidate move.
+        fen = board.fen()
+        fen_key = board.board_fen()
+        entry = self.transposition_table.get(fen)
+        killers = self.killers.get(depth, [])
+        def score_move(move):
+            uci = move.uci()
+            score = self._move_score(board, move) + self.history.get(uci, 0)
+            if uci in killers:
+                score += 10000
+            if entry and entry[3] == uci:
+                score += 20000
             if self.use_learning:
-                try:
-                    fen_key = board.fen().split(' ')[0]; s += self._learn_bonus(fen_key, m.uci())
-                except Exception: pass
-            return s
+                score += self._learn_bonus(fen_key, uci)
+            return score
         return sorted(moves, key=score_move, reverse=True)
+
     def _store_killer(self, depth: int, move: chess.Move) -> None:
         try:
             u = move.uci(); arr = self.killers.get(depth, [])
@@ -423,12 +456,15 @@ class SimpleAI:
         try:
             u = move.uci(); self.history[u] = self.history.get(u,0) + depth*depth
         except Exception: pass
-    def choose_move_iterative(self, board: chess.Board, time_limit: float = 5.0):
+    def choose_move_iterative(self, board: chess.Board, time_limit: float = 5.0, record=True, node_limit=None):
         moves = list(board.legal_moves)
         if not moves or board.is_game_over():
             return None
         start = time.monotonic()
         self.nodes_searched = 0
+        self._node_limit = node_limit
+        if len(self.transposition_table) > 40000:
+            self.transposition_table.clear()
         best_move = moves[0]
         completed_depth = 0
         self._deadline = start + max(0.001, time_limit)
@@ -453,7 +489,9 @@ class SimpleAI:
             pass
         finally:
             self._deadline = None
-        self._log_choice(board.board_fen(), best_move.uci(), board.turn)
+            self._node_limit = None
+        if record:
+            self._log_choice(board.board_fen(), best_move.uci(), board.turn)
         self.last_move_metrics = {
             'move': best_move.uci(), 'depth': completed_depth,
             'nodes': self.nodes_searched, 'branching': len(moves),
