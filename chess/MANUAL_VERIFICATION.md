@@ -15,6 +15,8 @@ display size and scaling. At 100%, 125%, 150%, and 200% scaling check:
 - [ ] Board clicks/focus match the displayed square, including Black orientation.
 - [ ] Normal and Large text, contrast and all piece styles remain readable.
 - [ ] Training Dashboard / Run settings / Memory pages do not clip controls.
+- [ ] Practice lesson selection, automatic replies, hints and saved completion remain usable.
+- [ ] Review line/details and its export are readable without covering navigation.
 
 Record failures with reproduction steps. Native tabs remove the old scrolling
 canvas path, but real driver behavior remains to be checked.
@@ -30,3 +32,17 @@ The board now exposes focus square/piece in visible feedback and supports keyboa
 selection. Tk Canvas accessibility and automatic screen-reader announcements are
 not proven; record concrete limitations before claiming support. Do not close the
 accessibility audit based only on synthesized key events.
+
+## Upgrade and interruption check
+
+- [ ] Back up a real previous-version profile, extract the new ZIP elsewhere, and
+      copy the entire old data folder into it; leave the backup unchanged.
+- [ ] Confirm unfinished PGN/clock state, named profiles and solved practice remain
+      available; train/save/restart/resume and compare the counters.
+- [ ] Keep all `.checkpoint.json` files on subsequent upgrades. If gameplay/imports
+      changed memory after training, verify Resume explains why exact counters
+      cannot be reused and Start preserves that memory.
+
+CI tests extracted source/frozen builds with temporary profiles and automated
+interruption cases. This checklist records the owner/device-specific upgrade
+experience; it has not been marked complete by those automated checks.

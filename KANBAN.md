@@ -13,7 +13,7 @@ retroactive duplicate issues.
 Updated October 25, 2026: this batch adds guided lessons, multi-move tactics,
 richer reviews, independent evaluation and recoverable training checkpoints to
 both editions. Implementation and local regression checks are complete; the
-[delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pulls?q=guided+learning)
+[delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47)
 and its required source/Windows/extracted-ZIP checks provide delivery evidence.
 The board contains **52 delivered feature/planning cards**, including this batch
 once its delivery PR is merged. Historical checks remain linked in earlier PRs.
@@ -82,12 +82,11 @@ See [guided learning and testing limits](chess/GUIDED_LEARNING.md), the
 | — | — | — | — | [Fix timeout/increment handling, declared endings and PGN result/header preservation](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) |
 | — | — | — | — | [Optimize search draw checks with reference-equivalence tests and retained A/B evidence](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) |
 | — | — | — | — | [Ship a VS Code edition and portable app from one source with matching, tested release ZIPs](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) |
-
-| — | — | — | — | Multi-move puzzle format, automatic replies, legal alternatives and factual feedback — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pulls?q=guided+learning) |
-| — | — | — | — | Six guided tactical/endgame lessons with saved progress and recommended next exercise — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pulls?q=guided+learning) |
-| — | — | — | — | Review continuations, tactical facts, details/export and uncertainty labels — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pulls?q=guided+learning) |
-| — | — | — | — | Independent 16-position evaluation corpus with checksum, memory overlap and per-game ledger — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pulls?q=guided+learning) |
-| — | — | — | — | Atomic memory/progress recovery journal, interrupted-process regressions, soak runner and compatible dependency upgrades — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pulls?q=guided+learning) |
+| — | — | — | — | Multi-move puzzle format, automatic replies, legal alternatives and factual feedback — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
+| — | — | — | — | Six guided tactical/endgame lessons with saved progress and recommended next exercise — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
+| — | — | — | — | Review continuations, tactical facts, details/export and uncertainty labels — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
+| — | — | — | — | Independent 16-position evaluation corpus with checksum, memory overlap and per-game ledger — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
+| — | — | — | — | Atomic memory/progress recovery journal, interrupted-process regressions, soak runner and compatible dependency upgrades — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
 
 ## Priorities and recommended order
 
@@ -127,6 +126,7 @@ automatically. Issue checklists track acceptance; the board tracks workflow stat
 | [#29](https://github.com/madman22222/VSCode_Random_Stuff/pull/29) | Populated project Kanban, 20 improvement issues, and planning workflow |
 | [#42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) | 17 validated backlog improvements: profile safety, study/support tools, contextual memory, measured tuning and contribution guidance |
 | [#46](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) | Reference audit, rules/PGN/clock fixes, measured search guards, and synchronized VS Code/Windows releases |
+| [#47](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) | Guided learning, independent evaluation, factual review and recoverable training checkpoints |
 
 Done means delivered in the cited merged PR, not proof of perfect behavior or
 increased chess strength. Future verification/enhancement cards intentionally build

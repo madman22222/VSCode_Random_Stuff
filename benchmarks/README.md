@@ -48,7 +48,7 @@ cancels an active trainer, and checks writer-lease release and search/memory cap
 Reports retain platform/Python, elapsed time, games and traced memory samples.
 Growing move records are expected to consume memory; samples alone do not prove
 absence of leaks. The checked-in `soak-smoke.json` records a local 100-cycle run;
-CI repeats 12 cycles per Linux Python version. Longer runs are opt-in and use
+CI repeats 12 cycles per Linux Python version and on Windows, retaining reports. Longer runs are opt-in and use
 temporary profiles. The test suite also forces abrupt process exit between
 checkpoint writes and tests recovery plus externally changed memory rejection.
 
