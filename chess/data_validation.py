@@ -29,6 +29,9 @@ def learning_records(data):
             raise ValueError('Unsupported learning format version')
         data = data.get('data')
     elif 'positions' in data:
+        meta = data.get('meta', {'version': 1})
+        if not isinstance(meta, dict) or type(meta.get('version')) is not int or meta.get('version') != 1:
+            raise ValueError('Unsupported readable learning format version')
         positions = data['positions']
         if not isinstance(positions, dict):
             raise ValueError('Invalid readable learning data')

@@ -103,6 +103,7 @@ class ProfileTools(unittest.TestCase):
             'e2e4': {'wins': 2, 'losses': 0, 'draws': 1}}}}}
         self.assertEqual(learning_records(readable)['position|e2e4']['w'], 2)
         for data in ({'meta': {'version': 99}, 'data': records},
+                     {'meta': {'version': 99}, 'positions': {}},
                      {'position|not-a-move': {'w': 1, 'l': 0, 'd': 0}},
                      {'position|e2e4': {'w': -1, 'l': 0, 'd': 0}}):
             with self.assertRaises(ValueError):
