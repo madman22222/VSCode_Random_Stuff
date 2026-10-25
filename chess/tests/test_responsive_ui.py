@@ -387,7 +387,13 @@ class TestResponsiveUI(unittest.TestCase):
         self.assertNotIn(chess.Move.from_uci('e1g1'), self.app.board.legal_moves)
 
     def test_modal_maintenance_prevents_play_training_and_close(self):
+        self.app.board.push_uci('e2e4')
+        self.app._save_session()
+        original = self.app.session_store.path.read_bytes()
         self.app._tools_busy = True
+        self.app.board.push_uci('e7e5')
+        self.app._save_session()
+        self.assertEqual(self.app.session_store.path.read_bytes(), original)
         self.app.game_started = False
         self.app.toggle_game_started()
         self.app.start_training_ai()

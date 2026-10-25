@@ -94,7 +94,7 @@ class StudioFeatures:
         self._apply_accessibility(save=False)
 
     def _save_session(self):
-        if not self._features_ready or self.session_store is None:
+        if not self._features_ready or self.session_store is None or getattr(self, '_tools_busy', False):
             return
         board = self.board if self._activity == 'game' else self._saved_game['board']
         state = None if self._activity == 'game' else self._saved_game
