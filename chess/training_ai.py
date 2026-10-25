@@ -1,6 +1,9 @@
 """Background self-play, resumable statistics, and reproducible evaluation."""
 from __future__ import annotations
 import json
+import math
+import hashlib
+import copy
 import os
 from pathlib import Path
 import random
@@ -61,6 +64,7 @@ class TrainingAI:
             raise ValueError('Exploration must be between 0 and 1')
         self.varied_starts = bool(varied_starts)
         self.seed = seed
+        self.resuming = resume
         self.games_played = 0
         self.results = {'white': 0, 'black': 0, 'draw': 0}
         self.move_limit_draws = 0
@@ -118,6 +122,15 @@ class TrainingAI:
         if self.thread and self.thread.is_alive():
             return
         self.ai.acquire_writer()
+        try:
+            if not self.resuming:
+                atomic_json(self.ai._learning_path + '.previous.json', {
+                    'meta': {'version': 2, 'outcome_scoring': self.ai.use_outcome_scoring},
+                    'data': self.ai.learning_db})
+        except Exception:
+            self.ai.release_writer()
+            raise
+        self.ai.use_outcome_scoring = False
         self._stop.clear()
         self.last_error = None
         self._session_games = 0
@@ -208,18 +221,39 @@ class TrainingAI:
             info(f'Training stopped: {self.games_played} games; {self.results}')
 
 
+def paired_interval(scores):
+    """Conservative 95% Hoeffding range; the sampling unit is one color-swapped pair."""
+    if not scores:
+        return [0.0, 100.0]
+    mean = sum(scores) / len(scores)
+    radius = math.sqrt(math.log(40) / (2 * len(scores)))
+    return [round(100 * max(0, mean - radius), 1), round(100 * min(1, mean + radius), 1)]
+
+
 class BenchmarkRunner:
     """Frozen learned engine vs the identical engine without move memory.
 
     Paired games swap colors from the same opening with equal node/depth budgets.
     No learning updates or gameplay files are written during evaluation.
     """
-    def __init__(self, ai, games=4, depth=2, node_limit=500, max_moves=120, seed=2026):
+    def __init__(self, ai, games=4, depth=2, node_limit=500, max_moves=120, seed=2026, opponent='untrained', experimental=False):
         if games < 2 or games % 2:
             raise ValueError('Comparison games must be a positive even number')
         self.candidate = ai.fork()
         self.candidate.use_learning = True
+        if experimental:
+            self.candidate.use_outcome_scoring = True
+        if opponent not in ('untrained', 'previous'):
+            raise ValueError('Unknown comparison opponent')
         self.baseline = ai.fork(learning=False)
+        if opponent == 'previous':
+            previous = json.loads(Path(ai._learning_path + '.previous.json').read_text(encoding='utf-8'))
+            self.baseline.learning_db = previous['data']
+            self.baseline.use_learning = True
+            self.baseline.use_outcome_scoring = bool(previous.get('meta', {}).get('outcome_scoring', False))
+        self.opponent = opponent
+        self.experimental = experimental
+        self._pair_scores = []
         self.games = games
         self.depth = depth
         self.node_limit = max(1, int(node_limit))
@@ -232,7 +266,10 @@ class BenchmarkRunner:
                        'completed': 0, 'requested': games, 'seed': seed,
                        'depth': depth, 'nodes_per_move': self.node_limit,
                        'max_plies': max_moves, 'memory_entries': len(self.candidate.learning_db),
-                       'score_percent': None, 'state': 'idle'}
+                       'score_percent': None, 'state': 'idle', 'opponent': opponent,
+                       'candidate_outcome_scoring': self.candidate.use_outcome_scoring,
+                       'ci95_score_percent': [0.0, 100.0], 'completed_pairs': 0,
+                       'scoring_recommended': False}
         self._stop = threading.Event()
         self.result_path = ai._learning_path + '.benchmark.json'
 
@@ -257,6 +294,7 @@ class BenchmarkRunner:
         try:
             for pair in range(self.games // 2):
                 initial = starting_board(rng)
+                pair_points = 0.0
                 for candidate_color in (chess.WHITE, chess.BLACK):
                     board = initial.copy()
                     for ai in (self.candidate, self.baseline):
@@ -279,16 +317,32 @@ class BenchmarkRunner:
                     outcome = board.outcome(claim_draw=True)
                     if outcome is None or outcome.winner is None:
                         self.result['draws'] += 1
+                        pair_points += 0.5
                         self.result['move_limit_draws'] += int(outcome is None)
                     elif outcome.winner == candidate_color:
                         self.result['wins'] += 1
+                        pair_points += 1
                     else:
                         self.result['losses'] += 1
                     self.result['completed'] += 1
                     n = self.result['completed']
                     self.result['score_percent'] = round(100 * (
                         self.result['wins'] + self.result['draws'] / 2) / n, 1)
+                self._pair_scores.append(pair_points / 2)
+                n_pairs = len(self._pair_scores)
+                self.result['ci95_score_percent'] = paired_interval(self._pair_scores)
+                self.result['completed_pairs'] = n_pairs
             self.result['state'] = 'completed'
+            if self.experimental:
+                from tactical_suite import run_suite
+                candidate_tactics = run_suite(self.candidate)
+                baseline_tactics = run_suite(self.baseline)
+                self.result['tactics'] = {'candidate': candidate_tactics, 'baseline': baseline_tactics}
+                self.result['scoring_recommended'] = (
+                    self.result['completed_pairs'] >= 20
+                    and self.result['ci95_score_percent'][0] > 50
+                    and self.result['move_limit_draws'] <= self.games // 2
+                    and candidate_tactics['passed'] == candidate_tactics['total'])
         except Exception as exc:
             self.last_error = exc
             self.result['state'] = 'error'
@@ -301,3 +355,86 @@ class BenchmarkRunner:
                 self.result['state'] = 'error'
                 self.result['error'] = str(exc)
             self.running = False
+
+
+def memory_fingerprint(ai):
+    return hashlib.sha256(json.dumps(ai.learning_db, sort_keys=True,
+                                     separators=(',', ':')).encode()).hexdigest()
+
+
+class ComparisonSeries:
+    """Run against the untrained engine and the previous saved version."""
+    def __init__(self, ai, games=20, depth=2, node_limit=500, max_moves=120,
+                 seed=2026, experimental=False, against='both'):
+        self.source = ai.fork()
+        self.fingerprint = memory_fingerprint(ai)
+        opponents = ['untrained', 'previous'] if against == 'both' else [against]
+        self.missing_previous = 'previous' in opponents and not Path(ai._learning_path + '.previous.json').exists()
+        if self.missing_previous:
+            opponents.remove('previous')
+        if not opponents:
+            raise ValueError('Train once to create a previous-version snapshot first.')
+        self.runners = [BenchmarkRunner(self.source, games, depth, node_limit, max_moves,
+                                       seed, opponent, experimental) for opponent in opponents]
+        self.current = self.runners[0]
+        self.running = False
+        self.last_error = None
+        self.thread = None
+        self.reports = []
+        self._stop = threading.Event()
+        self.experimental = experimental
+        self.eligible = False
+        self.result_path = ai._learning_path + '.benchmark.json'
+
+    @property
+    def result(self):
+        result = copy.deepcopy(self.current.result)
+        result.update(reports=copy.deepcopy(self.reports), missing_previous=self.missing_previous,
+                      scoring_recommended=self.eligible, memory_fingerprint=self.fingerprint,
+                      experiment=self.experimental)
+        if self.running:
+            result['state'] = 'running'
+        return result
+
+    def start(self):
+        if self.running:
+            return
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def request_stop(self):
+        self._stop.set()
+        self.current.request_stop()
+
+    def stop(self):
+        self.request_stop()
+        if self.thread:
+            self.thread.join()
+
+    def _run(self):
+        try:
+            for runner in self.runners:
+                if self._stop.is_set():
+                    break
+                self.current = runner
+                runner.start()
+                runner.thread.join()
+                self.reports.append(copy.deepcopy(runner.result))
+                if runner.last_error:
+                    raise runner.last_error
+            self.eligible = (self.experimental and not self._stop.is_set() and len(self.reports) == 2
+                             and all(r['scoring_recommended'] for r in self.reports))
+        except Exception as exc:
+            self.last_error = exc
+            self.current.result['state'] = 'error'
+            self.current.result['error'] = str(exc)
+        finally:
+            self.running = False
+            if self._stop.is_set():
+                self.eligible = False
+                self.current.result['state'] = 'cancelled'
+            try:
+                atomic_json(self.result_path, self.result)
+            except Exception as exc:
+                self.last_error = exc

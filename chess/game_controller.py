@@ -21,7 +21,8 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 import chess  # type: ignore - Python-chess library handles all chess rules (legal moves, check, checkmate, castling, en passant, etc.)
 from simple_ai import SimpleAI
-from training_ai import TrainingAI, BenchmarkRunner
+from training_ai import TrainingAI, ComparisonSeries
+from studio_features import StudioFeatures
 from engine_manager import EngineManager
 from engine_adapter import EngineAdapter
 
@@ -68,7 +69,7 @@ class Tooltip:
 HAS_UPGRADES = True
 
 
-class GameController:
+class GameController(StudioFeatures):
     """Coordinates the GUI view, AI, and engine manager.
 
     This class owns the game state and provides callbacks for UI events.
@@ -125,6 +126,7 @@ class GameController:
         self._finished_learning_backup = None
         self._finished_stats_backup = None
         self._finished_log = None
+        self._init_studio_state()
         
         # Initialize sound manager
         if HAS_UPGRADES and SoundManager:
@@ -193,6 +195,13 @@ class GameController:
         self.scrollable_frame = scrollable_frame
         self.control_pages = pages
 
+        settings_tabs = ttk.Notebook(settings_page)
+        settings_tabs.pack(fill='both', expand=True)
+        appearance_page, accessibility_page, tuning_page, files_page = [tk.Frame(settings_tabs) for _ in range(4)]
+        for page, title in ((appearance_page, 'Appearance'), (accessibility_page, 'Access'),
+                             (tuning_page, 'AI'), (files_page, 'Files')):
+            settings_tabs.add(page, text=title)
+
         # Small helper to add an info icon with a tooltip
         def _info(parent: tk.Widget, text: str) -> tk.Label:
             lbl = tk.Label(parent, text='ℹ', font=('Arial', 8, 'bold'), fg='#3f51b5', cursor='question_arrow')
@@ -204,10 +213,10 @@ class GameController:
 
         setup = tk.LabelFrame(scrollable_frame, text='Start a game')
         setup.pack(fill='x', pady=(0, 8))
-        self.mode_var = tk.StringVar(value='player_vs_ai')
-        self.mode_display_var = tk.StringVar(value='Play AI')
-        self.difficulty_var = tk.StringVar(value='Medium')
-        self.player_color_var = tk.StringVar(value='White')
+        self.mode_var = tk.StringVar(master=self.master, value='player_vs_ai')
+        self.mode_display_var = tk.StringVar(master=self.master, value='Play AI')
+        self.difficulty_var = tk.StringVar(master=self.master, value='Medium')
+        self.player_color_var = tk.StringVar(master=self.master, value='White')
         for label, variable, values, callback in (
             ('Mode', self.mode_display_var, ('Play AI', 'Two players', 'Watch AI'), self._choose_mode),
             ('Difficulty', self.difficulty_var, ('Beginner', 'Easy', 'Medium', 'Hard'), self._choose_difficulty),
@@ -225,16 +234,24 @@ class GameController:
         self.start_pause_button.pack(side='left', fill='x', expand=True, padx=2)
         self.hint_button = tk.Button(play_actions, text='Hint', command=self.request_hint)
         self.hint_button.pack(side='right', padx=2)
-        self.feedback_var = tk.StringVar(value='Choose a mode and press Play. Click a piece to see legal moves.')
+        self.feedback_var = tk.StringVar(master=self.master, value='Choose a mode and press Play. Click a piece to see legal moves.')
         tk.Label(scrollable_frame, textvariable=self.feedback_var, wraplength=380,
                  justify='left', anchor='w').pack(fill='x', pady=(0, 8))
 
+        self.workspace = ttk.Notebook(scrollable_frame)
+        self.workspace.pack(fill='both', expand=True)
+        self.game_workspace = tk.Frame(self.workspace)
+        self.practice_workspace = tk.Frame(self.workspace)
+        self.review_workspace = tk.Frame(self.workspace)
+        for page, label in ((self.game_workspace, 'Game'), (self.practice_workspace, 'Practice'),
+                            (self.review_workspace, 'Review')):
+            self.workspace.add(page, text=label)
         # Move list - more compact
-        tk.Label(scrollable_frame, text='Moves', font=('Arial', 9, 'bold')).pack()
-        self.move_list = tk.Listbox(scrollable_frame, width=20, height=7, font=('Arial', 8))
+        tk.Label(self.game_workspace, text='Moves', font=('Arial', 9, 'bold')).pack()
+        self.move_list = tk.Listbox(self.game_workspace, width=20, height=7, font=('Arial', 8))
         self.move_list.pack(fill='both', expand=True, padx=2, pady=6)
 
-        btn_frame = tk.Frame(scrollable_frame)
+        btn_frame = tk.Frame(self.game_workspace)
         btn_frame.pack(pady=2)
         tk.Button(btn_frame, text='Save', command=self.save_pgn, font=('Arial', 8)).grid(row=0, column=0, padx=1)
         tk.Button(btn_frame, text='Load', command=self.load_pgn, font=('Arial', 8)).grid(row=0, column=1, padx=1)
@@ -244,33 +261,33 @@ class GameController:
         tk.Button(btn_frame, text='Restart', command=self.restart_game, font=('Arial', 8)).grid(row=0, column=4, padx=1)
         
         # AI depth - header with info
-        depth_header = tk.Frame(settings_page)
+        depth_header = tk.Frame(tuning_page)
         depth_header.pack(fill='x')
         tk.Label(depth_header, text='AI Depth', font=('Arial', 9, 'bold')).pack(side='left')
         _info(depth_header, 'Search depth for AI in GUI modes. Higher = stronger, slower.\nFor Training AI, use Per-move time to control speed.').pack(side='left', padx=4)
-        self.depth_var = tk.IntVar(value=ai_depth)
-        depth_scale = tk.Scale(settings_page, from_=1, to=6, orient='horizontal',
+        self.depth_var = tk.IntVar(master=self.master, value=ai_depth)
+        depth_scale = tk.Scale(tuning_page, from_=1, to=6, orient='horizontal',
                               variable=self.depth_var, command=self.on_depth_change,
                               length=180, sliderlength=20)
         depth_scale.pack(padx=2)
         self.depth_scale = depth_scale
         # Metrics display
-        self.metrics_var = tk.StringVar(value='Metrics: (none)')
+        self.metrics_var = tk.StringVar(master=self.master, value='Metrics: (none)')
         tk.Label(tools_page, textvariable=self.metrics_var, font=('Arial', 8), fg='#555', wraplength=370, justify='left').pack(pady=2)
         export_btn = tk.Button(tools_page, text='Export Metrics CSV', command=self.export_metrics_csv, font=('Arial', 8))
         export_btn.pack(pady=2)
         
         # Advanced timing controls stay in Settings.
-        mode_frame = tk.LabelFrame(settings_page, text='AI timing')
+        mode_frame = tk.LabelFrame(tuning_page, text='AI timing')
         mode_frame.pack(fill='x', pady=4)
-        self.auto_restart_var = tk.BooleanVar(value=False)
+        self.auto_restart_var = tk.BooleanVar(master=self.master, value=False)
         tk.Checkbutton(mode_frame, text='Restart finished Watch AI games', variable=self.auto_restart_var).pack(anchor='w')
         # AI move pacing to ensure UI keeps up (ms)
         pace_frame = tk.Frame(mode_frame)
         pace_frame.pack(fill='x', padx=8, pady=2)
         tk.Label(pace_frame, text='AI Move Delay (ms):', font=('Arial', 8)).pack(side='left')
         _info(pace_frame, 'Applies only to AI vs AI (UI) to slow moves for visibility. Training AI uses Per-move time instead.').pack(side='left', padx=4)
-        self.ai_delay_var = tk.IntVar(value=200)
+        self.ai_delay_var = tk.IntVar(master=self.master, value=200)
         tk.Scale(pace_frame, from_=0, to=1000, orient='horizontal', variable=self.ai_delay_var, length=120, sliderlength=14).pack(side='left', padx=4)
 
         # Per-move time for GUI AI (separate from Training)
@@ -278,14 +295,14 @@ class GameController:
         pace2_frame.pack(fill='x', padx=8, pady=2)
         tk.Label(pace2_frame, text='Move budget (ms):', font=('Arial', 8)).pack(side='left')
         _info(pace2_frame, 'Time cap per move for built-in AI in Player vs AI and AI vs AI (UI). Training AI uses its own Per-move time setting below.').pack(side='left', padx=4)
-        self.gui_move_time_var = tk.IntVar(value=(self.config.get('gui_move_time_ms', 250) if self.config else 250))
+        self.gui_move_time_var = tk.IntVar(master=self.master, value=(self.config.get('gui_move_time_ms', 250) if self.config else 250))
         gui_move_scale = tk.Scale(pace2_frame, from_=50, to=2000, orient='horizontal', variable=self.gui_move_time_var, length=120, sliderlength=14, command=lambda _=None: self.on_gui_move_time_change())
         gui_move_scale.pack(side='left', padx=4)
 
         # General options
-        options_frame = tk.LabelFrame(settings_page, text='Options', font=('Arial', 9, 'bold'))
+        options_frame = tk.LabelFrame(files_page, text='Options', font=('Arial', 9, 'bold'))
         options_frame.pack(fill='x', pady=2, padx=2)
-        self.autosave_pgn_var = tk.BooleanVar(value=self.config.get('auto_save_pgn', False) if self.config else False)
+        self.autosave_pgn_var = tk.BooleanVar(master=self.master, value=self.config.get('auto_save_pgn', False) if self.config else False)
         # Row for autosave option + info icon
         opts_row1 = tk.Frame(options_frame)
         opts_row1.pack(fill='x', padx=2, pady=1)
@@ -293,7 +310,7 @@ class GameController:
         autosave_cb.pack(side='left')
         _info(opts_row1, 'When enabled, saves PGN automatically at game end.').pack(side='left', padx=4)
         # Compress learning data (gzip)
-        self.compress_learning_var = tk.BooleanVar(value=(self.config.get('compress_learning', getattr(self.ai, 'compress_learning', True)) if self.config else getattr(self.ai, 'compress_learning', True)))
+        self.compress_learning_var = tk.BooleanVar(master=self.master, value=(self.config.get('compress_learning', getattr(self.ai, 'compress_learning', True)) if self.config else getattr(self.ai, 'compress_learning', True)))
         opts_row2 = tk.Frame(options_frame)
         opts_row2.pack(fill='x', padx=2, pady=1)
         compress_cb = tk.Checkbutton(opts_row2, text='Compress learning data (gzip)', variable=self.compress_learning_var,
@@ -313,7 +330,7 @@ class GameController:
         for label, command in (('Start', self.start_training_ai), ('Stop and save', self.stop_training_ai),
                                ('Resume', lambda: self.start_training_ai(resume=True))):
             tk.Button(dashboard_actions, text=label, command=command).pack(side='left', fill='x', expand=True, padx=2)
-        self.training_dashboard_var = tk.StringVar(value='Ready. Resume reloads saved counters and move memory.')
+        self.training_dashboard_var = tk.StringVar(master=self.master, value='Ready. Resume reloads saved counters and move memory.')
         tk.Label(dashboard, textvariable=self.training_dashboard_var, justify='left',
                  wraplength=380).pack(fill='x', pady=8)
         self.training_progress = ttk.Progressbar(dashboard, mode='determinate', maximum=100)
@@ -321,10 +338,10 @@ class GameController:
         # Training settings
         training_frame = tk.LabelFrame(training_page, text='Training Settings', font=('Arial', 9, 'bold'))
         training_frame.pack(fill='x', pady=2, padx=2)
-        self.training_batch_size_var = tk.IntVar(value=(self.config.get('training_batch_size', 100) if self.config else 100))
-        self.training_move_time_var = tk.IntVar(value=(self.config.get('training_move_time_ms', 250) if self.config else 250))  # milliseconds per move
-        self.training_snapshot_interval_var = tk.IntVar(value=(self.config.get('training_snapshot_batches', 0) if self.config else 0))  # 0 = off
-        self.training_games_var = tk.IntVar(value=(self.config.get('training_games', 0) if self.config else 0))
+        self.training_batch_size_var = tk.IntVar(master=self.master, value=(self.config.get('training_batch_size', 100) if self.config else 100))
+        self.training_move_time_var = tk.IntVar(master=self.master, value=(self.config.get('training_move_time_ms', 250) if self.config else 250))  # milliseconds per move
+        self.training_snapshot_interval_var = tk.IntVar(master=self.master, value=(self.config.get('training_snapshot_batches', 0) if self.config else 0))  # 0 = off
+        self.training_games_var = tk.IntVar(master=self.master, value=(self.config.get('training_games', 0) if self.config else 0))
         row = tk.Frame(training_frame)
         row.pack(fill='x', padx=4, pady=1)
         tk.Label(row, text='Batch size (games):', font=('Arial', 8)).pack(side='left')
@@ -373,8 +390,8 @@ class GameController:
 
         exploration_row = tk.Frame(training_frame)
         exploration_row.pack(fill='x')
-        self.exploration_var = tk.DoubleVar(value=0.10)
-        self.varied_starts_var = tk.BooleanVar(value=True)
+        self.exploration_var = tk.DoubleVar(master=self.master, value=0.10)
+        self.varied_starts_var = tk.BooleanVar(master=self.master, value=True)
         tk.Label(exploration_row, text='Explore early moves:').pack(side='left')
         tk.Scale(exploration_row, from_=0, to=0.5, resolution=0.05, orient='horizontal',
                  variable=self.exploration_var, length=120).pack(side='left')
@@ -382,7 +399,7 @@ class GameController:
 
         # New features frame - more compact
         if HAS_UPGRADES:
-            features_frame = tk.LabelFrame(settings_page, text='Features', font=('Arial', 9, 'bold'))
+            features_frame = tk.LabelFrame(appearance_page, text='Features', font=('Arial', 9, 'bold'))
             features_frame.pack(fill='x', pady=2, padx=2)
             self.features_frame = features_frame
             
@@ -394,7 +411,7 @@ class GameController:
             theme_frame = tk.Frame(features_frame)
             theme_frame.pack(fill='x', pady=1, padx=2)
             tk.Label(theme_frame, text='Theme:', font=('Arial', 8)).pack(side='left')
-            self.theme_var = tk.StringVar(value=self.config.get('theme', 'light') if self.config else 'light')
+            self.theme_var = tk.StringVar(master=self.master, value=self.config.get('theme', 'light') if self.config else 'light')
             theme_menu = tk.OptionMenu(theme_frame, self.theme_var, 'light', 'dark')
             theme_menu.config(font=('Arial', 8))
             theme_menu.pack(side='left', fill='x', expand=True)
@@ -443,7 +460,7 @@ class GameController:
             
             # Statistics display - more compact
             if self.config:
-                stats_frame = tk.LabelFrame(settings_page, text='Stats', font=('Arial', 9, 'bold'))
+                stats_frame = tk.LabelFrame(files_page, text='Stats', font=('Arial', 9, 'bold'))
                 stats_frame.pack(fill='x', pady=2, padx=2)
                 
                 stats = self.config.get('statistics', {})
@@ -459,7 +476,7 @@ class GameController:
         # Learning panel
         learn_frame = tk.LabelFrame(training_page, text='Learning', font=('Arial', 9, 'bold'))
         learn_frame.pack(fill='x', pady=2, padx=2)
-        self.learn_use_var = tk.BooleanVar(value=True)
+        self.learn_use_var = tk.BooleanVar(master=self.master, value=True)
         def toggle_learning():
             try:
                 self.ai.use_learning = bool(self.learn_use_var.get())
@@ -482,7 +499,7 @@ class GameController:
         engine_frame = tk.LabelFrame(tools_page, text='Engine (Advanced)', font=('Arial', 9, 'bold'))
         engine_frame.pack(fill='x', pady=2, padx=2)
         self.engine_frame = engine_frame
-        self.engine_path_var = tk.StringVar()
+        self.engine_path_var = tk.StringVar(master=self.master)
         self.engine_path_var.set(shutil.which('stockfish') or '')
         tk.Entry(engine_frame, textvariable=self.engine_path_var, width=22, font=('Arial', 8)).pack(padx=2, pady=1)
         
@@ -496,13 +513,13 @@ class GameController:
         self.verify_button.pack(side='left', fill='x', expand=True, padx=1)
         
         # Engine settings - simple defaults
-        self.platform_var = tk.StringVar(value='auto')
-        self.github_token = tk.StringVar()
-        self.verify_retries = tk.IntVar(value=2)
-        self.verify_timeout = tk.DoubleVar(value=0.05)
-        self.backoff_var = tk.StringVar(value='linear')
-        self.backoff_max = tk.DoubleVar(value=5.0)
-        self.auto_download_var = tk.BooleanVar(value=False)
+        self.platform_var = tk.StringVar(master=self.master, value='auto')
+        self.github_token = tk.StringVar(master=self.master)
+        self.verify_retries = tk.IntVar(master=self.master, value=2)
+        self.verify_timeout = tk.DoubleVar(master=self.master, value=0.05)
+        self.backoff_var = tk.StringVar(master=self.master, value='linear')
+        self.backoff_max = tk.DoubleVar(master=self.master, value=5.0)
+        self.auto_download_var = tk.BooleanVar(master=self.master, value=False)
         self.verify_log = tk.Listbox(tools_page, width=22, height=4, font=('Arial', 7))
         
         self.engine_toggle = tk.Button(engine_frame, text='Use Engine: Off', command=self.toggle_engine, font=('Arial', 8))
@@ -511,10 +528,10 @@ class GameController:
         # Batch PGN Converter frame
         converter_frame = tk.LabelFrame(tools_page, text='Batch PGN Converter', font=('Arial', 9, 'bold'))
         converter_frame.pack(fill='x', pady=2, padx=2)
-        self.converter_format_var = tk.StringVar(value='json')
-        self.converter_input_dir_var = tk.StringVar(value='')
-        self.converter_output_dir_var = tk.StringVar(value='')
-        self.converter_status_var = tk.StringVar(value='Idle')
+        self.converter_format_var = tk.StringVar(master=self.master, value='json')
+        self.converter_input_dir_var = tk.StringVar(master=self.master, value='')
+        self.converter_output_dir_var = tk.StringVar(master=self.master, value='')
+        self.converter_status_var = tk.StringVar(master=self.master, value='Idle')
         tk.Label(converter_frame, text='Format:', font=('Arial', 8)).pack(anchor='w', padx=2)
         fmt_menu = tk.OptionMenu(converter_frame, self.converter_format_var, 'json', 'summary', 'csv', 'minimal')
         fmt_menu.config(font=('Arial', 8))
@@ -531,8 +548,8 @@ class GameController:
         tk.Label(comparison, text='The saved AI plays an identical AI without move memory. '
                  'Each opening is played twice with colors swapped. Search budgets are equal.',
                  wraplength=380, justify='left').pack(fill='x', pady=8)
-        self.benchmark_games_var = tk.IntVar(value=4)
-        self.benchmark_nodes_var = tk.IntVar(value=500)
+        self.benchmark_games_var = tk.IntVar(master=self.master, value=20)
+        self.benchmark_nodes_var = tk.IntVar(master=self.master, value=500)
         for label, variable in (('Games (even number)', self.benchmark_games_var),
                                  ('Search nodes per move', self.benchmark_nodes_var)):
             row = tk.Frame(comparison)
@@ -543,13 +560,19 @@ class GameController:
         row.pack(fill='x', pady=8)
         tk.Button(row, text='Run comparison', command=self.start_benchmark).pack(side='left')
         tk.Button(row, text='Cancel', command=self.stop_benchmark).pack(side='right')
-        self.benchmark_var = tk.StringVar(value='No comparison yet. Small samples do not establish a strength rating.')
+        self.experimental_scoring_var = tk.BooleanVar(master=self.master, value=False)
+        tk.Checkbutton(comparison, text='Test confidence-weighted scoring (experimental)',
+                       variable=self.experimental_scoring_var).pack(anchor='w')
+        tk.Button(comparison, text='Enable only if evidence supports it',
+                  command=self._approve_outcome_scoring).pack(fill='x', pady=4)
+        self.benchmark_var = tk.StringVar(master=self.master, value='No comparison yet. Small samples do not establish a strength rating.')
         tk.Label(comparison, textvariable=self.benchmark_var, wraplength=380,
                  justify='left').pack(fill='x', pady=8)
         tk.Label(compare_page, text='Score = wins + half of draws. Move-limit draws are reported separately. '
                  'These results measure this comparison, not Elo or a guaranteed improvement.',
                  wraplength=380, justify='left').pack(fill='x', pady=12)
         self._load_benchmark_result()
+        self._build_studio_features(accessibility_page)
 
         self.load_piece_images()
         self.load_overlay_icons()
@@ -557,11 +580,16 @@ class GameController:
         # Finalize styles after every control exists.
         self.apply_theme_to_ui(self.theme_var.get())
         self.update_board()
+        self._restore_session()
         self.master.after(80, self._poll_ui_queue)
         master.protocol('WM_DELETE_WINDOW', self.on_close)
 
     # ---- UI callbacks and helpers (moved from previous main.py ChessGUI) ----
     def on_click(self, square):
+        if self._activity == 'practice':
+            return self._practice_click(square)
+        if self._activity == 'review':
+            return
         if self.training_ai and self.training_ai.running:
             self.feedback_var.set('Stop and save training before playing.')
             return
@@ -663,6 +691,7 @@ class GameController:
             self.play_mode == 'player_vs_ai' and self.board.turn != self._human_color())
 
     def _choose_mode(self, event=None):
+        self._return_to_game()
         modes = {'Play AI': 'player_vs_ai', 'Two players': 'player_vs_player', 'Watch AI': 'ai_vs_ai'}
         self.mode_var.set(modes[self.mode_display_var.get()])
         self.change_mode()
@@ -706,6 +735,7 @@ class GameController:
         if self.ai_thinking and self._ai_started_at:
             elapsed = time.monotonic() - self._ai_started_at
             self.status.configure(text=f'AI thinking… {elapsed:.1f}s')
+        self._feature_tick()
         self._poll_training_status()
         if self.benchmark is not None:
             self._show_benchmark(self.benchmark.result)
@@ -786,6 +816,10 @@ class GameController:
         self.update_board(force=True)
 
     def request_hint(self):
+        if self._activity == 'practice':
+            return self._practice_hint()
+        if self._activity == 'review':
+            return self._analyze_review()
         if self.ai_thinking or self._hint_thinking or self.board.is_game_over(claim_draw=True):
             return
         self._hint_thinking = True
@@ -905,6 +939,9 @@ class GameController:
                 pass
         self.update_controls_state()
 
+        if self._activity != 'game':
+            return
+        self._save_session()
         # If the game just ended, finalize AI learning once
         try:
             if game_over_now and hasattr(self, 'ai') and self.ai:
@@ -948,6 +985,7 @@ class GameController:
     def new_game(self) -> None:
         """Start a fresh game, clearing the board and state."""
         try:
+            self._return_to_game()
             # Increment session to abort any in-flight AI moves
             self._cancel_search()
             self.ai.game_log = []
@@ -1050,6 +1088,7 @@ class GameController:
             self.board_view.highlight(self.selected)
 
     def apply_theme_to_ui(self, theme):
+        body_size = round(9 * self.text_scale)
         dark = theme == 'dark'
         bg, card, fg, muted = ('#17212f', '#223044', '#edf3fa', '#aebed0') if dark else (
             '#edf2f7', '#ffffff', '#172b44', '#52657c')
@@ -1058,7 +1097,7 @@ class GameController:
         style = ttk.Style(self.master)
         style.theme_use('clam')
         style.configure('TNotebook', background=bg, borderwidth=0)
-        style.configure('TNotebook.Tab', padding=(14, 10), font=(self.ui_font, 10),
+        style.configure('TNotebook.Tab', padding=(8, 8), font=(self.ui_font, min(11, body_size)),
                         background=bg, foreground=muted)
         style.map('TNotebook.Tab', background=[('selected', card)],
                   foreground=[('selected', accent)])
@@ -1073,19 +1112,21 @@ class GameController:
                 if kind in ('Frame', 'Labelframe'):
                     widget.configure(bg=card, bd=0)
                     if kind == 'Labelframe':
-                        widget.configure(fg=muted, font=(self.ui_font, 10, 'bold'),
+                        widget.configure(fg=muted, font=(self.ui_font, body_size + 1, 'bold'),
                                          padx=8, pady=6)
                 elif kind == 'Label':
-                    widget.configure(bg=card, fg=fg, font=(self.ui_font, 9))
+                    widget.configure(bg=card, fg=fg, font=(self.ui_font, body_size))
                 elif kind == 'Button':
                     widget.configure(bg='#e7eef9' if not dark else '#334860', fg=fg,
                                      activebackground=accent, activeforeground='white',
                                      relief='flat', bd=0, padx=9, pady=6,
-                                     font=(self.ui_font, 9), cursor='hand2')
+                                     font=(self.ui_font, body_size), cursor='hand2')
                 elif kind in ('Checkbutton', 'Radiobutton'):
                     widget.configure(bg=card, fg=fg, activebackground=card,
                                      activeforeground=fg, selectcolor=card,
-                                     font=(self.ui_font, 9), highlightthickness=0)
+                                     font=(self.ui_font, body_size), highlightthickness=0)
+                elif kind == 'TCombobox':
+                    widget.configure(font=(self.ui_font, body_size))
                 elif kind == 'Scale':
                     widget.configure(bg=card, fg=fg, highlightthickness=0,
                                      troughcolor=bg, bd=0)
@@ -1120,6 +1161,7 @@ class GameController:
             self.controls_notebook.select(self.control_pages[1])
 
     def toggle_game_started(self):
+        self._return_to_game()
         if self.play_mode == 'training_ai':
             return self.stop_training_ai() if self.game_started else self.start_training_ai()
         if self.training_ai and self.training_ai.running:
@@ -1193,6 +1235,7 @@ class GameController:
         self.training_progress.configure(value=(100 * min(snap['session_games'], limit) / limit if limit else 0))
         if not self.training_ai.running and not self._training_synced:
             self.ai.learning_db = copy.deepcopy(self.training_ai.ai.learning_db)
+            self.ai.use_outcome_scoring = self.training_ai.ai.use_outcome_scoring
             self._training_synced = True
             self._update_start_pause_button()
 
@@ -1204,9 +1247,10 @@ class GameController:
             return
         try:
             games, nodes = int(self.benchmark_games_var.get()), int(self.benchmark_nodes_var.get())
-            if not 2 <= games <= 100 or games % 2 or not 10 <= nodes <= 100000:
-                raise ValueError('Use 2–100 games (even) and 10–100000 nodes per move.')
-            self.benchmark = BenchmarkRunner(self.ai, games=games, node_limit=nodes)
+            if not 2 <= games <= 1000 or games % 2 or not 10 <= nodes <= 100000:
+                raise ValueError('Use 2–1000 games (even) and 10–100000 nodes per move.')
+            self.benchmark = ComparisonSeries(self.ai, games=games, node_limit=nodes,
+                                              experimental=bool(self.experimental_scoring_var.get()))
             self.benchmark.start()
         except Exception as exc:
             self.benchmark_var.set(f'Cannot compare: {exc}')
@@ -1216,12 +1260,25 @@ class GameController:
             self.benchmark.request_stop()
 
     def _show_benchmark(self, result):
-        self.benchmark_var.set(f"{result['state'].capitalize()}: {result['completed']}/{result['requested']} games\n"
-            f"Trained wins: {result['wins']} · Losses: {result['losses']} · Draws: {result['draws']}\n"
-            f"Score: {result['score_percent'] if result['score_percent'] is not None else '—'}%\n"
-            f"Move-limit draws: {result['move_limit_draws']} · Seed: {result['seed']}\n"
-            f"{result['nodes_per_move']} nodes/move · {result['memory_entries']} frozen memory entries"
-            + (f"\nError: {result['error']}" if result.get('error') else ''))
+        reports = list(result.get('reports') or [])
+        if not reports or reports[-1].get('opponent') != result.get('opponent'):
+            reports.append(result)
+        text = [f"Comparison {result.get('state', 'idle')}."]
+        for report in reports:
+            interval = report.get('ci95_score_percent', [0, 100])
+            text.append(f"{report.get('opponent', 'untrained').capitalize()}: {report['completed']}/{report['requested']} games; "
+                        f"W{report['wins']} L{report['losses']} D{report['draws']}\n"
+                        f"Score {report.get('score_percent') if report.get('score_percent') is not None else '—'}%; conservative 95% range {interval[0]}–{interval[1]}%\n"
+                        f"Move-limit draws {report['move_limit_draws']}")
+        if result.get('state') == 'running':
+            text.append('Comparison running…')
+        if result.get('missing_previous'):
+            text.append('Previous snapshot unavailable. Train once to create one.')
+        if result.get('experiment'):
+            text.append('Scoring evidence: ' + ('supports enabling' if result.get('scoring_recommended') else 'not sufficient; scoring stays off'))
+        if result.get('error'):
+            text.append(result['error'])
+        self.benchmark_var.set('\n'.join(text))
 
     def _load_benchmark_result(self):
         import json
@@ -1520,7 +1577,7 @@ class GameController:
                 try:
                     im = Image.open(fname).convert('RGBA')
                     im = im.resize((48, 48), Image.LANCZOS)
-                    imgs[sym] = ImageTk.PhotoImage(im)
+                    imgs[sym] = ImageTk.PhotoImage(im, master=self.master)
                 except Exception:
                     imgs = {}
                     break
@@ -1535,7 +1592,7 @@ class GameController:
                 if gen_imgs and ImageTk:
                     imgs = {}
                     for sym, pil_img in gen_imgs.items():
-                        imgs[sym] = ImageTk.PhotoImage(pil_img)
+                        imgs[sym] = ImageTk.PhotoImage(pil_img, master=self.master)
                     self.piece_images = imgs if imgs else None
                 else:
                     self.piece_images = None
@@ -1549,7 +1606,7 @@ class GameController:
             if gen_icons and ImageTk:
                 icons = {}
                 for icon_type, pil_img in gen_icons.items():
-                    icons[icon_type] = ImageTk.PhotoImage(pil_img)
+                    icons[icon_type] = ImageTk.PhotoImage(pil_img, master=self.master)
                 self.overlay_icons = icons if icons else None
             else:
                 self.overlay_icons = None
@@ -1577,6 +1634,8 @@ class GameController:
                 self.engine_toggle.configure(text='Use Engine: Off')
 
     def on_close(self):
+        self._save_session()
+        self._cancel_review()
         self._closed = True
         self._cancel_search()
         if self.benchmark:
@@ -1701,6 +1760,7 @@ class GameController:
             pass
 
     def undo_move(self):
+        self._return_to_game()
         if self.training_ai and self.training_ai.running:
             self.feedback_var.set('Stop and save training before undoing moves.')
             return
@@ -1832,6 +1892,7 @@ class GameController:
             pass
 
     def load_pgn(self):
+        self._return_to_game()
         file = filedialog.askopenfilename(filetypes=[('PGN files', '*.pgn')])
         if not file:
             return

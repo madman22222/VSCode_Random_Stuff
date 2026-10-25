@@ -200,3 +200,133 @@ class TestResponsiveUI(unittest.TestCase):
             game = chess.pgn.read_game(stream)
         loaded = game.end().board()
         self.assertEqual(loaded.fen(), self.app.board.fen())
+
+    def test_practice_keeps_real_game_and_learning_unchanged(self):
+        import copy
+        self.app.board.push_uci('e2e4')
+        original = self.app.board.fen()
+        self.app.update_board(force=True)
+        stats = copy.deepcopy(self.app.config.get('statistics'))
+        self.app.workspace.select(self.app.practice_workspace)
+        self.pump()
+        self.assertEqual(self.app._activity, 'practice')
+        self.app.on_click(chess.G6)
+        self.app.on_click(chess.G7)
+        self.assertTrue(self.app.practice_done)
+        self.assertEqual(self.app.config.get('statistics'), stats)
+        self.assertEqual(self.app.ai.learning_db, {})
+        self.assertIn('mate-white', self.app.config.get('practice_solved'))
+        self.app.workspace.select(self.app.game_workspace)
+        self.pump()
+        self.assertEqual(self.app.board.fen(), original)
+        self.assertFalse(self.app.game_started)
+
+    def test_review_navigation_and_analysis_do_not_change_game(self):
+        for uci in ('e2e4', 'e7e5', 'g1f3'):
+            self.app.board.push_uci(uci)
+        original = self.app.board.fen()
+        self.app.update_board(force=True)
+        self.app.workspace.select(self.app.review_workspace)
+        self.pump()
+        self.app._review_step(-2)
+        self.assertEqual(len(self.app.board.move_stack), 1)
+        self.app._save_session()
+        self.assertEqual(self.app.session_store.load()['board'].fen(), original)
+        self.app._analyze_review()
+        self.wait_until(lambda: not self.app.review_runner.running, timeout=10)
+        self.pump()
+        self.assertEqual(len(self.app.review_runner.rows), 3)
+        self.assertEqual(self.app.ai.game_log, [])
+        self.app.workspace.select(self.app.game_workspace)
+        self.pump()
+        self.assertEqual(self.app.board.fen(), original)
+
+    def test_keyboard_selection_and_piece_render_cache(self):
+        self.app.play_mode = 'player_vs_player'
+        self.app.game_started = True
+        self.root.focus_force()
+        self.app.board_view.focus(chess.E2)
+        self.pump()
+        ids = dict(self.app.board_view.piece_items)
+        self.app.update_board(force=True)
+        self.assertEqual(self.app.board_view.piece_items, ids)
+        for key in ('Return', 'Up', 'Return'):
+            focused = self.root.focus_get()
+            focused.event_generate('<KeyPress>', keysym=key)
+            self.pump()
+        self.assertEqual(self.app.board.peek().uci(), 'e2e3')
+        self.assertEqual(self.app.board_view.piece_items[chess.A1], ids[chess.A1])
+
+    def test_accessibility_modes_preserve_position_and_are_persisted(self):
+        before = self.app.board.fen()
+        self.app.text_size_var.set('Large')
+        self.app.contrast_var.set(True)
+        self.app.piece_style_var.set('Letters')
+        self.app._apply_accessibility()
+        self.pump()
+        self.assertEqual(self.app.board.fen(), before)
+        self.assertTrue(self.app.board_view.high_contrast)
+        self.assertEqual(self.app.board_view.piece_style, 'Letters')
+        self.assertEqual(sum(item is not None for item in self.app.board_view.piece_items.values()), 32)
+        self.assertEqual(self.app.config.get('text_size'), 'Large')
+        self.assertTrue(self.app.config.get('high_contrast'))
+
+    def test_automatic_restore_pauses_clock_and_recovers_game(self):
+        self.app.player_color_var.set('Black')
+        self.app.board.push_uci('e2e4')
+        self.app.clock.white_time = 123.4
+        self.app.clock.black_time = 99.2
+        self.app.clock_enabled = True
+        self.app._save_session()
+        other = tk.Tk()
+        try:
+            with patch('game_controller.ConfigManager', return_value=self.app.config):
+                restored = GameController(other)
+            other.update()
+            self.assertEqual(restored.board.fen(), self.app.board.fen())
+            self.assertEqual(restored.player_color_var.get(), 'Black')
+            self.assertAlmostEqual(restored.clock.white_time, 123.4)
+            self.assertFalse(restored.clock.running)
+            self.assertFalse(restored.game_started)
+            self.assertIn('restored', restored.feedback_var.get())
+        finally:
+            for job in other.tk.call('after', 'info'):
+                other.after_cancel(job)
+            other.destroy()
+
+    def test_experimental_scoring_cannot_be_enabled_without_evidence(self):
+        self.app._approve_outcome_scoring()
+        self.assertFalse(self.app.ai.use_outcome_scoring)
+        self.assertIn('Not enabled', self.app.benchmark_var.get())
+
+    def test_large_text_keeps_tab_panels_visible_at_small_window(self):
+        self.root.geometry('980x720')
+        self.app.text_size_var.set('Large')
+        self.app._apply_accessibility()
+        self.pump()
+        for page in self.app.control_pages:
+            self.app.controls_notebook.select(page)
+            self.pump()
+            for child in page.winfo_children():
+                if child.winfo_manager() == 'pack':
+                    self.assertTrue(child.winfo_ismapped(), child.winfo_class())
+                    self.assertLessEqual(child.winfo_y() + child.winfo_height(), page.winfo_height())
+
+    def test_focus_is_safe_across_flip_resize_and_theme(self):
+        from unittest.mock import Mock
+        self.root.report_callback_exception = Mock()
+        self.root.focus_force()
+        view = self.app.board_view
+        view.focus(chess.E2)
+        self.pump()
+        view.flip_board()
+        self.pump()
+        view.focus(chess.E2)
+        view.resize(64)
+        self.pump()
+        view.set_theme('dark')
+        self.pump()
+        view.focus(chess.E2)
+        self.pump()
+        self.assertEqual(len(view.canvases), 64)
+        self.root.report_callback_exception.assert_not_called()

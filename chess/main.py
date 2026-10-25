@@ -6,7 +6,7 @@ Default behavior launches the GUI. Use CLI flags to run headless training.
 import argparse
 import sys
 from simple_ai import SimpleAI
-from training_ai import TrainingAI, BenchmarkRunner
+from training_ai import TrainingAI, ComparisonSeries
 
 
 def run_gui() -> None:
@@ -71,6 +71,8 @@ def run_training(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Chess GUI and headless training")
+    p.add_argument("--against", choices=("both", "untrained", "previous"), default="both", help="Comparison opponents")
+    p.add_argument("--experiment", action="store_true", help="Test confidence-weighted root scoring without enabling it")
     p.add_argument("--benchmark", action="store_true", help="Compare saved learning against an untrained engine")
     p.add_argument("--resume", action="store_true", help="Resume saved training counters; games is the additional game limit")
     p.add_argument("--exploration", type=float, default=0.10, help="Early-game exploration probability (0 to 1)")
@@ -102,12 +104,12 @@ def main(argv=None):
         parser.error("Choose training or comparison, not both")
     if args.benchmark:
         import json
-        games = args.games or 4
+        games = args.games or 20
         if games < 2 or games % 2:
             parser.error("Comparison requires an even number of games (at least 2)")
-        runner = BenchmarkRunner(SimpleAI(learning_path=args.learning_file), games=games,
+        runner = ComparisonSeries(SimpleAI(learning_path=args.learning_file), games=games,
                                  depth=args.depth, node_limit=args.nodes,
-                                 max_moves=args.max_plies, seed=args.seed)
+                                 max_moves=args.max_plies, seed=args.seed, against=args.against, experimental=args.experiment)
         runner.start()
         try:
             while runner.thread.is_alive():

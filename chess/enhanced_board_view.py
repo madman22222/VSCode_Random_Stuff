@@ -1,9 +1,10 @@
 """Enhanced board view with animations, drag-drop, themes, and more."""
 import tkinter as tk
+import os
 from typing import Callable, Dict, Optional, Tuple
 import chess
 from constants import (
-    PIECE_UNICODE, SQUARE_SIZE, BOARD_SIZE, THEMES, FILES, RANKS,
+    PIECE_UNICODE, SQUARE_SIZE, THEMES, FILES, RANKS,
     ANIMATION_FRAMES, ANIMATION_DELAY,
     LIGHT_COLOR, DARK_COLOR, HIGHLIGHT_COLOR, LEGAL_MOVE_COLOR,
     CAPTURE_COLOR, LAST_MOVE_COLOR
@@ -38,6 +39,12 @@ class EnhancedBoardView:
         self.drag_item: Optional[int] = None
         self.drag_canvas: Optional[tk.Canvas] = None
         self.animating = False
+        self.high_contrast = False
+        self.piece_style = 'Images'
+        self.focus_square = chess.E2
+        self._rendered_pieces = {}
+        self._focus_render_key = None
+        self._focused_canvas = None
         self.square_size = SQUARE_SIZE
         self._board = None
         self._piece_images = None
@@ -67,11 +74,18 @@ class EnhancedBoardView:
         """Build the board grid with canvases."""
         colors = self._get_colors()
 
+        # Drop stale focus targets before widget destruction can dispatch FocusOut.
+        self.canvases.clear()
+        self._focused_canvas = None
+        self._focus_render_key = None
         # Clear existing grid
         for widget in self.parent.winfo_children():
             widget.destroy()
         self.canvases.clear()
         self.piece_items.clear()
+        self._rendered_pieces.clear()
+        self._focus_render_key = None
+        self._focused_canvas = None
         
         # Create coordinate labels if enabled
         if self.show_coordinates:
@@ -100,7 +114,7 @@ class EnhancedBoardView:
             # Determine square color
             # Theme should NOT affect base board squares; use fixed classic colors
             is_light = (rank + file) % 2 == 1
-            square_color = LIGHT_COLOR if is_light else DARK_COLOR
+            square_color = self._base_color(is_light)
             
             canvas = tk.Canvas(self.parent, width=self.square_size, height=self.square_size,
                              bg=square_color, highlightthickness=0)
@@ -110,6 +124,8 @@ class EnhancedBoardView:
             canvas.bind('<Button-1>', lambda e, s=square: self._on_press(e, s))
             canvas.bind('<B1-Motion>', lambda e, s=square: self._on_drag(e, s))
             canvas.bind('<ButtonRelease-1>', lambda e, s=square: self._on_release(e, s))
+            canvas.bind('<FocusIn>', lambda event: self._paint_focus())
+            canvas.bind('<FocusOut>', lambda event: self._paint_focus())
             canvas.configure(cursor='hand2')
             
             self.canvases[square] = canvas
@@ -117,6 +133,7 @@ class EnhancedBoardView:
     
     def _on_press(self, event: tk.Event, square: int) -> None:
         """Handle mouse press - start drag."""
+        self.focus(square)
         self.dragging_piece = square
         # Will handle in on_click callback
     
@@ -173,7 +190,6 @@ class EnhancedBoardView:
         if piece_images is not self._source_images:
             self._source_images = piece_images
             self._scaled_images.clear()
-        colors = self._get_colors()
 
         for square, canvas in self.canvases.items():
             piece = board.piece_at(square)
@@ -183,48 +199,85 @@ class EnhancedBoardView:
             # Determine base square color
             # Use fixed base board colors regardless of theme
             is_light = (rank + file) % 2 == 1
-            square_color = LIGHT_COLOR if is_light else DARK_COLOR
+            square_color = self._base_color(is_light)
             
             # Apply last move highlighting
             if self.last_move and square in [self.last_move.from_square, self.last_move.to_square]:
-                square_color = LAST_MOVE_COLOR
+                square_color = self._highlight_color('last')
             
             canvas.configure(bg=square_color)
             
-            # Clear existing piece
-            if self.piece_items[square] is not None:
-                try:
-                    item_id = self.piece_items[square]
-                    if item_id is not None:
-                        canvas.delete(item_id)
-                except Exception:
-                    pass
-                self.piece_items[square] = None
-            
-            # Display piece
-            if piece is not None:
-                if piece_images:
-                    key = piece.symbol()
-                    img = self._scaled_piece(key, piece_images.get(key))
-                    if img:
-                        item_id = canvas.create_image(self.square_size // 2, self.square_size // 2, image=img)
-                        self.piece_items[square] = item_id
-                        setattr(canvas, '_img_ref', img)
-                    else:
-                        text = PIECE_UNICODE[piece.symbol()]
-                        item_id = canvas.create_text(self.square_size // 2, self.square_size // 2,
-                                                    text=text,
-                                                    font=('Arial', int(self.square_size * 0.65), 'bold'),
-                                                    fill='black')
-                        self.piece_items[square] = item_id
-                else:
-                    text = PIECE_UNICODE[piece.symbol()]
-                    item_id = canvas.create_text(self.square_size // 2, self.square_size // 2,
-                                                text=text,
-                                                font=('Arial', int(self.square_size * 0.65), 'bold'),
-                                                fill='black')
-                    self.piece_items[square] = item_id
-    
+            stamp = (piece.symbol() if piece else None, self.square_size,
+                     self.piece_style, id(piece_images), self.high_contrast)
+            if self._rendered_pieces.get(square) == stamp:
+                continue
+            self._rendered_pieces[square] = stamp
+            canvas.delete('piece')
+            self.piece_items[square] = None
+            if piece is None:
+                continue
+            img = self._scaled_piece(piece.symbol(), piece_images.get(piece.symbol())) if (
+                piece_images and self.piece_style == 'Images') else None
+            center = self.square_size // 2
+            if img:
+                item = canvas.create_image(center, center, image=img, tags='piece')
+                setattr(canvas, '_img_ref', img)
+            else:
+                text = PIECE_UNICODE[piece.symbol()]
+                fill = '#111827'
+                if self.piece_style == 'Letters':
+                    pad = self.square_size * .15
+                    canvas.create_oval(pad, pad, self.square_size-pad, self.square_size-pad,
+                        fill='white' if piece.color else '#111827', outline='#64748b', tags='piece')
+                    text = piece.symbol().upper()
+                    fill = '#111827' if piece.color else 'white'
+                elif self.high_contrast:
+                    # Symbols are drawn on a contrasting badge too.
+                    pad = self.square_size * .08
+                    canvas.create_oval(pad, pad, self.square_size-pad, self.square_size-pad,
+                        fill='white', outline='#64748b', tags='piece')
+                item = canvas.create_text(center, center, text=text, fill=fill, tags='piece',
+                    font=('Segoe UI Symbol' if os.name == 'nt' else 'DejaVu Sans', max(10, int(self.square_size * (.42 if self.piece_style == 'Letters' else .65)))))
+            self.piece_items[square] = item
+        self._paint_focus()
+
+    def _base_color(self, light):
+        if self.high_contrast:
+            return '#ffffff' if light else '#26364a'
+        return LIGHT_COLOR if light else DARK_COLOR
+
+    def _highlight_color(self, kind):
+        normal = {'selected': HIGHLIGHT_COLOR, 'legal': LEGAL_MOVE_COLOR,
+                  'capture': CAPTURE_COLOR, 'last': LAST_MOVE_COLOR}
+        contrast = {'selected': '#ffcf00', 'legal': '#26c6da', 'capture': '#ff8a65', 'last': '#ffd180'}
+        return (contrast if self.high_contrast else normal)[kind]
+
+    def set_accessibility(self, high_contrast, piece_style):
+        self.high_contrast = high_contrast
+        self.piece_style = piece_style if piece_style in ('Images', 'Symbols', 'Letters') else 'Images'
+        self._scaled_images.clear()
+        self._rendered_pieces.clear()
+        self._restore_position()
+
+    def focus(self, square):
+        self.focus_square = square
+        self.canvases[square].focus_set()
+        self._paint_focus()
+
+    def _paint_focus(self):
+        canvas = self.canvases.get(self.focus_square)
+        active = bool(canvas and canvas.focus_get() == canvas)
+        key = (self.focus_square, self.square_size, active)
+        if key == self._focus_render_key:
+            return
+        self._focus_render_key = key
+        if self._focused_canvas is not None:
+            self._focused_canvas.delete('keyboard-focus')
+        self._focused_canvas = canvas if active else None
+        if active:
+            edge = self.square_size - 2
+            canvas.create_rectangle(2, 2, edge, edge, outline='#2563eb', width=3, tags='keyboard-focus')
+
     def _scaled_piece(self, key, image):
         if image is None:
             return None
@@ -284,11 +337,11 @@ class EnhancedBoardView:
         # Draw piece on animation canvas
         if piece_images and piece.symbol() in piece_images:
             img = piece_images[piece.symbol()]
-            anim_item = anim_canvas.create_image(self.square_size // 2, self.square_size // 2, image=img)
+            anim_canvas.create_image(self.square_size // 2, self.square_size // 2, image=img)
             setattr(anim_canvas, '_img_ref', img)
         else:
             text = PIECE_UNICODE[piece.symbol()]
-            anim_item = anim_canvas.create_text(self.square_size // 2, self.square_size // 2,
+            anim_canvas.create_text(self.square_size // 2, self.square_size // 2,
                                                text=text,
                                                font=('Arial', int(self.square_size * 0.65), 'bold'),
                                                fill='black')
@@ -326,31 +379,28 @@ class EnhancedBoardView:
     
     def highlight(self, square: int):
         """Highlight a specific square."""
-        colors = self._get_colors()
         canvas = self.canvases.get(square)
         if canvas:
-            canvas.configure(bg=HIGHLIGHT_COLOR)
+            canvas.configure(bg=self._highlight_color('selected'))
     
     def clear_highlights(self):
         """Reset all squares to normal colors."""
-        colors = self._get_colors()
         for square, canvas in self.canvases.items():
             rank = chess.square_rank(square)
             file = chess.square_file(square)
             # Restore fixed base board colors
             is_light = (rank + file) % 2 == 1
-            square_color = LIGHT_COLOR if is_light else DARK_COLOR
+            square_color = self._base_color(is_light)
             
             # Preserve last move highlighting
             if self.last_move and square in [self.last_move.from_square, self.last_move.to_square]:
-                square_color = LAST_MOVE_COLOR
+                square_color = self._highlight_color('last')
             
             canvas.configure(bg=square_color)
     
     def show_legal_moves(self, board: chess.Board, square: int):
         """Show legal moves for a piece."""
         self.clear_highlights()
-        colors = self._get_colors()
         
         for move in board.legal_moves:
             if move.from_square == square:
@@ -358,9 +408,9 @@ class EnhancedBoardView:
                 canvas = self.canvases.get(to_square)
                 if canvas:
                     if board.is_capture(move):
-                        canvas.configure(bg=CAPTURE_COLOR)
+                        canvas.configure(bg=self._highlight_color('capture'))
                     else:
-                        canvas.configure(bg=LEGAL_MOVE_COLOR)
+                        canvas.configure(bg=self._highlight_color('legal'))
     
     def apply_special_overlays(self, board: chess.Board, overlay_icons: Optional[dict] = None):
         """Apply overlays for special moves."""

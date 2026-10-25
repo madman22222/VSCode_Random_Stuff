@@ -28,14 +28,17 @@ class ChessClock:
     
     def start(self, root: tk.Tk, is_white: bool = True) -> None:
         """Start the clock for the specified color."""
+        self.stop()
         self.root = root
         self.running = True
         self.active_color = is_white
-        self.last_update = time.time()
+        self.last_update = time.monotonic()
         self._tick()
     
     def stop(self) -> None:
         """Stop the clock."""
+        if self.running:
+            self._consume_elapsed()
         self.running = False
         if self.timer_id and self.root:
             try:
@@ -49,6 +52,7 @@ class ChessClock:
         if not self.running:
             return
         
+        self._consume_elapsed()
         # Add increment to current player
         if self.active_color:
             self.white_time += self.increment
@@ -57,39 +61,34 @@ class ChessClock:
         
         # Switch colors
         self.active_color = not self.active_color
-        self.last_update = time.time()
+        self.last_update = time.monotonic()
     
     def _tick(self) -> None:
         """Update clock every 100ms."""
         if not self.running or not self.root:
             return
         
-        # Calculate elapsed time
-        now = time.time()
-        elapsed = now - self.last_update
-        self.last_update = now
-        
-        # Update active clock
-        if self.active_color:
-            self.white_time -= elapsed
-            if self.white_time <= 0:
-                self.white_time = 0
-                self.stop()
-                if self.on_timeout:
-                    self.on_timeout(True)
-                return
-        else:
-            self.black_time -= elapsed
-            if self.black_time <= 0:
-                self.black_time = 0
-                self.stop()
-                if self.on_timeout:
-                    self.on_timeout(False)
-                return
-        
+        self._consume_elapsed()
+        remaining = self.white_time if self.active_color else self.black_time
+        if remaining <= 0:
+            color = self.active_color
+            self.stop()
+            if self.on_timeout:
+                self.on_timeout(color)
+            return
+
         # Schedule next tick
         self.timer_id = self.root.after(100, self._tick)
     
+    def _consume_elapsed(self):
+        now = time.monotonic()
+        elapsed = max(0, now - self.last_update)
+        self.last_update = now
+        if self.active_color:
+            self.white_time = max(0, self.white_time - elapsed)
+        else:
+            self.black_time = max(0, self.black_time - elapsed)
+
     def get_time_string(self, is_white: bool) -> str:
         """Get formatted time string for display."""
         time_sec = self.white_time if is_white else self.black_time
