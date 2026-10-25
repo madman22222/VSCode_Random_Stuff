@@ -358,6 +358,8 @@ class TestResponsiveUI(unittest.TestCase):
 
     def test_named_profile_switch_starts_paused_without_old_game_log(self):
         self.app.ai.game_log = [('position', 'e2e4', True)]
+        self.app.learn_use_var.set(False)
+        self.app.benchmark_var.set('Old profile result')
         with patch('studio_tools.simpledialog.askstring', return_value='experiment'), \
              patch('studio_tools.messagebox.askyesno', return_value=True):
             self.app._select_profile()
@@ -365,6 +367,8 @@ class TestResponsiveUI(unittest.TestCase):
         self.assertEqual(self.app.ai.game_log, [])
         self.assertFalse(self.app.game_started)
         self.assertEqual(self.app.config.get('learning_profile'), 'experiment')
+        self.assertFalse(self.app.ai.use_learning)
+        self.assertNotIn('Old profile result', self.app.benchmark_var.get())
 
     def test_underpromotion_en_passant_and_castling_restrictions_in_gui(self):
         self.app.play_mode = 'player_vs_player'

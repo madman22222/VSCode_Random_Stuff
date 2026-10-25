@@ -72,8 +72,13 @@ class ConfigManager:
     
     def set(self, key: str, value: Any) -> None:
         """Set configuration value and save."""
+        previous = dict(self.config)
         self.config[key] = value
-        self.save_config()
+        try:
+            self.save_config()
+        except Exception:
+            self.config = previous
+            raise
     
     def update_statistics(self, result: str) -> None:
         """Update game statistics. result: 'white', 'black', 'draw'"""

@@ -126,6 +126,7 @@ class StudioTools:
             from simple_ai import SimpleAI
             target = profile_path(root, name) if name else root / 'ai_learn.json'
             candidate = SimpleAI(depth=self.ai.depth, learning_path=target)
+            candidate.use_learning = bool(self.learn_use_var.get())
             candidate.transposition_limit = self.ai.transposition_limit
             candidate.learning_max_entries = self.ai.learning_max_entries
             candidate.learning_min_keep = self.ai.learning_min_keep
@@ -142,6 +143,10 @@ class StudioTools:
             self.training_ai = None
             self.benchmark = None
             self.new_game()
+            self.benchmark_var.set('No comparison loaded for this profile.')
+            self.training_dashboard_var.set('Ready in this profile. Start or Resume to load its training progress.')
+            self.training_stats_label.configure(text='No active run')
+            self.training_progress.configure(value=0)
             self._load_benchmark_result()
             self.feedback_var.set(f'Training profile: {name or "default"}. {target}')
         except Exception as exc:

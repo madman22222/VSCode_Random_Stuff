@@ -123,6 +123,13 @@ class ProfileTools(unittest.TestCase):
             config.save_config()
         self.assertEqual(self.config.read_text(), '{"ai_depth": "bad"}')
 
+    def test_failed_preference_write_rolls_back_in_memory_value(self):
+        config = ConfigManager(self.config)
+        with patch.object(config, 'save_config', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                config.set('learning_profile', 'wrong-profile')
+        self.assertIsNone(config.get('learning_profile'))
+
     def test_bounded_gzip_input_and_future_config(self):
         path = self.root / 'big.json.gz'
         with gzip.open(path, 'wb') as stream:
