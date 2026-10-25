@@ -98,6 +98,27 @@ def run_diagnostics(report_path):
             converted = batch_convert(str(inputs), str(outputs))
             assert converted['ok'] == 1, str(converted)
             report['checks']['bundled_converter'] = True
+            from profile_store import ProfileStore
+            from puzzle_packs import load_pack
+            from support_tools import support_report
+            from game_review import annotated_pgn
+            from learning_keys import position_key
+            profile = temp / 'profile'
+            profile.mkdir()
+            preferences = ConfigManager(str(profile / 'chess_config.json'))
+            preferences.set('ai_depth', 1)
+            store = ProfileStore(profile)
+            store.backup(temp / 'backup.zip')
+            preferences.set('ai_depth', 2)
+            rollback = store.restore(temp / 'backup.zip')
+            assert rollback.is_file()
+            assert ConfigManager(str(profile / 'chess_config.json')).get('ai_depth') == 1
+            assert len(load_pack(assets / 'puzzles' / 'studio-extras.json')) == 4
+            assert 'Shallow estimate' in annotated_pgn(review)
+            assert json.loads(support_report())['frozen'] == frozen()
+            assert ' ' in position_key(chess.Board())
+            report['checks']['profile_restore_and_puzzle_pack'] = True
+            report['checks']['support_and_review_export'] = True
             assert not errors, str(errors)
             app.on_close()
             app = root = None

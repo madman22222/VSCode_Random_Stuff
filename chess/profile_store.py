@@ -46,10 +46,9 @@ class ProfileStore:
         # Lock every known memory profile, including empty ones and incoming files.
         paths = {'ai_learn.json'}
         for name in list(self.files()) + list(extra):
-            if name.endswith('.json.gz'):
-                paths.add(name[:-3])
-            elif name.endswith('.json') and ('ai_learn' in name or name.startswith('profiles/')):
-                paths.add(name)
+            path = PurePosixPath(name)
+            if path.name.startswith('ai_learn'):
+                paths.add((path.parent / 'ai_learn.json').as_posix())
         with ExitStack() as stack:
             stack.enter_context(writer_lease(self.root / '.profile'))
             for name in sorted(paths):
@@ -108,6 +107,8 @@ class ProfileStore:
                 files[name] = content
             from data_validation import configuration, learning_records, training_checkpoint, MAX_JSON_BYTES
             for name, content in files.items():
+                if Path(name).name.startswith('last_session.invalid-'):
+                    continue  # Retained forensic bytes are never loaded as a live session.
                 if name.endswith('.gz'):
                     with gzip.GzipFile(fileobj=io.BytesIO(content)) as stream:
                         content = stream.read(MAX_JSON_BYTES + 1)

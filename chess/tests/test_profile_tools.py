@@ -87,6 +87,15 @@ class ProfileTools(unittest.TestCase):
             with self.assertRaises(ValueError):
                 profile_path(self.root, name)
 
+    def test_history_does_not_create_spurious_writer_locks(self):
+        folder = self.root / 'profiles' / 'study' / 'comparison-history'
+        folder.mkdir(parents=True)
+        (folder / 'report.json').write_text('{}')
+        (self.root / 'last_session.invalid-1.json').write_bytes(b'bad historical recovery bytes')
+        self.store.backup(self.backup)
+        self.assertFalse((folder / 'report.json.lock').exists())
+        self.assertIn('last_session.invalid-1.json', self.store.inspect(self.backup))
+
     def test_learning_validation_supports_formats_rejects_invalid_before_mutation(self):
         records = {'position|e2e4': {'w': 2, 'l': 0, 'd': 1, 'ts': 12}}
         self.assertEqual(learning_records({'meta': {'version': 2}, 'data': records}), records)
