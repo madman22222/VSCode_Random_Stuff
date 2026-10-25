@@ -112,6 +112,13 @@ python chess/main.py --training --resume --games 10
 | `--learning-file path/to/learn.json` | Separate memory file |
 | `--no-compress` | Plain JSON instead of gzip |
 
+Checkpoints publish a validated recovery record before updating memory and
+counters. Resume can recover an interrupted publication; unreadable inputs remain
+preserved. If gameplay/imports changed memory after the checkpoint, exact resume
+is refused: Start a new run retains the newer memory. Keep the entire profile
+when upgrading or backing up, including `.checkpoint.json`. This protects process
+interruptions; it is not a guarantee against hardware/power-loss corruption.
+
 Resume restores saved depth, move time, exploration, varied starts, and seed;
 it does not continue the unfinished game. Time budgets can produce different
 search depths on different hardware, so training is not bit-for-bit reproducible.
@@ -119,7 +126,7 @@ search depths on different hardware, so training is not bit-for-bit reproducible
 ## Measure learning
 
 The **Compare** tab runs a frozen copy of the saved AI against an identical
-engine with learning disabled and, by default, the saved previous version. Each seeded opening is played twice with colors
+engine with learning disabled and, by default, the saved previous version. Each seeded position from an independent 16-position catalogue is played twice with colors
 swapped. Both sides use equal depth/node budgets. Neither engine learns during
 the comparison. Results are saved and shown again next launch; cancellation
 retains completed games but marks the result cancelled.
@@ -129,7 +136,10 @@ python chess/main.py --benchmark --games 4 --depth 2 --nodes 500 --max-plies 120
 ```
 
 The report includes wins, losses, draws, score percentage, move-limit draws,
-seed, memory entry count, and search settings. Score is `(wins + draws/2)/games`.
+seed, memory entry count, search settings, corpus version/checksum, remembered root count,
+category totals and a per-game ledger. Evaluation roots are disjoint from all
+training opening seed prefixes; self-play may later encounter them, so memory
+overlap is reported rather than assuming a permanent holdout. Score is `(wins + draws/2)/games`.
 Small samples and many move-limit draws are weak evidence. This is a comparison
 under the reported settings, not an Elo estimate or proof of improvement. There
 is also a 5-second search ceiling for unusually slow positions/hardware.
@@ -146,6 +156,7 @@ Default files in portable `data/` or, when running from source, `chess/`
 - `ai_learn.json.gz`: move memory (or `ai_learn.json` without compression).
 - `ai_learn_readable.json`: readable memory export.
 - `ai_learn.json.training.json`: counters and training settings.
+- `ai_learn.json.checkpoint.json`: atomic recovery pair of memory and training progress.
 - `ai_learn.json.benchmark.json`: latest comparison result.
 - `ai_learn.json.previous.json`: pre-training memory snapshot.
 - `last_session.json`: unfinished-game recovery.
@@ -172,9 +183,14 @@ paired comparisons, failure reporting, and the CLI.
 
 ## Tactical checks and practice
 
-The **Play → Practice** page contains seven hand-built puzzles: mate in one for
+The **Play → Practice** page contains six guided lessons and 13 built-in exercises.
+The original seven hand-built puzzles cover mate in one for
 both colors, winning a queen, promoting before a pawn is lost, escaping check,
-saving an attacked queen, and preventing mate. Legal alternatives that meet the
+saving an attacked queen, and preventing mate. Six new exercises cover forks, pins,
+queen/rook mates, king-and-pawn play, and calculation against different defenses.
+The opponent replies automatically; Restart cycles authored defenses. Choose a
+lesson or Continue recommended lesson; solved progress and lesson selection are saved.
+See [guided learning and pack version 2](GUIDED_LEARNING.md). Legal alternatives that meet the
 puzzle goal are accepted. Hints are progressive; solved progress is saved in
 preferences. The game and clocks remain paused and untouched while practicing.
 
@@ -189,7 +205,10 @@ python chess/tactical_suite.py --depth 2 --nodes 12000
 Open **Play → Review** during or after a game. Use the first/previous/next/last
 buttons or Left/Right to inspect positions. Analyze game runs in the background
 and shows the played move, a suggested alternative, an estimated change in pawn
-units, and possible mistakes. Analysis is budgeted and shallow: suggestions can
+units, and possible mistakes. A short legal continuation follows exact cached
+search entries when available. Factual notes describe checks, absolute pins,
+multiple attacks and unprotected pieces to inspect; they do not prove a gain.
+The separate annotated PGN export includes the line and uncertainty notice. Analysis is budgeted and shallow: suggestions can
 be wrong, and uncertain/mate scores are not presented as precise guarantees.
 Cancel stops after the current bounded search. Returning to Game restores the
 original board and learning log; review never trains the AI.
@@ -306,6 +325,7 @@ The header's **Support & study** menu provides:
   themed puzzles is in `assets/puzzles/studio-extras.json` (portable:
   `_internal/assets/puzzles/studio-extras.json`). The pack format requires version,
   ID, author, puzzles with valid FENs, hints and legal UCI solutions; see that example.
+  Version 2 accepts validated multi-move lines and goals; see [the format guide](GUIDED_LEARNING.md).
 - **About / export diagnostics**: show revision, runtime, active paths and memory
   counts. The export excludes logs, games and move memory; review paths before sharing.
   Local logs rotate in `logs/application.log` (three retained backups).

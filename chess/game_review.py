@@ -16,8 +16,11 @@ class ReviewRunner:
         self._stop = threading.Event()
 
     def start(self):
-        if self.running:
+        if self.thread and self.thread.is_alive():
             return
+        self.rows = []
+        self.last_error = None
+        self._stop.clear()
         self.running = True
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
@@ -37,10 +40,30 @@ class ReviewRunner:
         score = metrics.get('score_cp')
         return move, (score if board.turn else -score) if score is not None else None, metrics.get('depth', 0)
 
+    def _continuation(self, board, first, limit=4):
+        """Only follow legal, exact cached search entries; never invent a line."""
+        probe = board.copy()
+        result = []
+        move = first
+        for _ in range(limit):
+            if move is None or move not in probe.legal_moves:
+                break
+            result.append(probe.san(move))
+            probe.push(move)
+            if probe.is_game_over(claim_draw=True):
+                break
+            entry = self.ai.transposition_table.get(probe.fen())
+            if not entry or entry[2] != 'EXACT' or not entry[3]:
+                break
+            import chess
+            move = chess.Move.from_uci(entry[3])
+        return result
+
     def _run(self):
         try:
             board = self.board.root()
             before_move, before_score, before_depth = self._evaluate(board)
+            continuation = self._continuation(board, before_move)
             for move in self.board.move_stack:
                 if self._stop.is_set():
                     break
@@ -49,6 +72,9 @@ class ReviewRunner:
                 suggested = board.san(before_move) if before_move else '—'
                 from chess_coach import describe_move
                 reason = describe_move(board, before_move) if before_move else 'No legal suggestion available.'
+                from study_coach import move_features
+                facts = move_features(board, before_move) if before_move else []
+                played_facts = move_features(board, move)
                 board.push(move)
                 after_move, after_score, after_depth = self._evaluate(board)
                 loss = None
@@ -64,7 +90,10 @@ class ReviewRunner:
                     note = 'Possible mistake: this search preferred a different move.'
                 self.rows.append({'move': move.uci(), 'san': san, 'suggested': suggested,
                     'reason': reason, 'score_before_white': before_score, 'score_after_white': after_score,
-                    'estimated_loss_cp': loss, 'note': note, 'depth': before_depth})
+                    'estimated_loss_cp': loss, 'note': note, 'depth': before_depth,
+                    'continuation': continuation, 'facts': facts, 'played_facts': played_facts,
+                    'uncertainty': 'Budget-limited search; continuation is illustrative, not a forced line.'})
+                continuation = self._continuation(board, after_move)
                 before_move, before_score, before_depth = after_move, after_score, after_depth
         except Exception as exc:
             self.last_error = str(exc)
@@ -84,5 +113,6 @@ def annotated_pgn(runner):
             break
         node = node.variations[0]
         node.comment = (f"Shallow estimate: suggested {row['suggested']}. {row['note']} "
-                        f"{row.get('reason', '')} Search depth {row['depth']}; node budget {runner.nodes}.")
+                        f"{row.get('reason', '')} Continuation: {' '.join(row.get('continuation', []))}. "
+                        f"{' '.join(row.get('facts', []))} {row.get('uncertainty', '')} Search depth {row['depth']}; node budget {runner.nodes}.")
     return str(game) + '\n'

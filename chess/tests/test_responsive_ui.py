@@ -422,7 +422,7 @@ class TestResponsiveUI(unittest.TestCase):
         path = Path(__file__).resolve().parents[1] / 'assets' / 'puzzles' / 'studio-extras.json'
         with patch('studio_tools.filedialog.askopenfilename', return_value=str(path)):
             self.app._import_puzzle_pack()
-        self.assertEqual(len(self.app.puzzles), 11)
+        self.assertEqual(len(self.app.puzzles), 17)
         self.assertTrue((Path(self.tmp.name) / 'puzzle-packs' / 'studio-extras.json').exists())
         self.app.workspace.select(self.app.practice_workspace)
         self.pump()
@@ -496,3 +496,40 @@ class TestResponsiveUI(unittest.TestCase):
         self.app.training_ai.max_moves = 2
         self.assertFalse(self.app.clock.running)
         self.wait_until(lambda: not self.app.training_ai.running)
+
+    def test_guided_lesson_auto_reply_and_saved_progress_leave_live_game_unchanged(self):
+        self.app.board.push_uci('e2e4')
+        original = self.app.board.fen()
+        self.app.workspace.select(self.app.practice_workspace)
+        self.pump()
+        self.app.lesson_choice.set('2. Forks and pins')
+        self.app._lesson_changed()
+        self.assertEqual(self.app.puzzles[self.app.practice_index].id, 'guided:fork')
+        for uci in ('c3d5', 'd5c7'):
+            move = chess.Move.from_uci(uci)
+            self.app._practice_click(move.from_square)
+            self.app._practice_click(move.to_square)
+        self.assertTrue(self.app.practice_done)
+        self.assertIn('guided:fork', ConfigManager(self.app.config.config_file).get('practice_solved', []))
+        self.assertIn('1/2', self.app.lesson_text.get())
+        self.app.workspace.select(self.app.game_workspace)
+        self.pump()
+        self.assertEqual(self.app.board.fen(), original)
+        self.assertEqual(self.app.ai.learning_db, {})
+
+    def test_practice_tabs_and_board_remain_usable_at_tk_scaling_factors(self):
+        # Synthetic Tk scaling verifies widget bounds, not a physical monitor/driver.
+        for factor in (1.0, 1.5, 2.0):
+            self.root.tk.call('tk', 'scaling', factor)
+            self.root.geometry('1600x1000')
+            self.app.workspace.select(self.app.practice_workspace)
+            self.pump()
+            self.assertTrue(self.app.practice_picker.winfo_ismapped())
+            self.assertLessEqual(self.app.practice_picker.winfo_x() + self.app.practice_picker.winfo_width(),
+                                 self.app.practice_workspace.winfo_width())
+            view = self.app.board_view
+            self.assertEqual(len(view.canvases), 64)
+            self.assertLessEqual(view.square_size * 8 + 24, min(self.app.board_area.winfo_width(), self.app.board_area.winfo_height()))
+            view.canvases[chess.G6].event_generate('<MouseWheel>', delta=-120)
+            self.pump()
+            self.assertEqual(len(view.canvases), 64)

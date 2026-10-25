@@ -306,7 +306,8 @@ class StudioTools:
             pack = read_json(target)
             atomic_json(self._profile_root() / 'puzzle-packs' / (pack['id'] + '.json'), pack)
             self.puzzles = list(self.puzzles) + puzzles
-            self.practice_picker.configure(values=[p.title for p in self.puzzles])
+            self.lesson_choice.set('All puzzles')
+            self._lesson_changed()
             self.feedback_var.set(f'Loaded {len(puzzles)} puzzles. The pack and solved progress persist in your data folder.')
         except Exception as exc:
             self._tool_error('Puzzle pack rejected', exc)

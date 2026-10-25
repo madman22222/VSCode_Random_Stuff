@@ -120,6 +120,9 @@ class ProfileStore:
                         raise ValueError('Profile JSON must be an object')
                     if name == 'chess_config.json':
                         configuration(value)
+                    elif name.endswith('.checkpoint.json'):
+                        from training_journal import validate_journal
+                        validate_journal(value)
                     elif Path(name).name.startswith('ai_learn') and not name.endswith(('.training.json', '.benchmark.json')):
                         learning_records(value)
                     elif name.endswith('.training.json'):

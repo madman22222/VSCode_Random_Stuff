@@ -10,33 +10,30 @@ retroactive duplicate issues.
 
 ## Current status
 
-Updated October 25, 2026: **17 improvement issues implemented and validated** in
-[PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42). The board now
-contains **47 delivered feature/planning cards** (43 previous cards plus 4 reference/edition improvements).
-No implementation or review task is currently in progress.
+Updated October 25, 2026: this batch adds guided lessons, multi-move tactics,
+richer reviews, independent evaluation and recoverable training checkpoints to
+both editions. Implementation and local regression checks are complete; the
+[delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47)
+and its required source/Windows/extracted-ZIP checks provide delivery evidence.
+The board contains **52 delivered feature/planning cards**, including this batch
+once its delivery PR is merged. Historical checks remain linked in earlier PRs.
 
-Validation: **103 tests** passed on a Linux virtual desktop and in Windows source
-checks; Linux Python 3.10/3.11 CI also passed. All **11 diagnostic groups** passed.
-The actual extracted Windows ZIP passed frozen diagnostics and CLI checks with
-Python removed from the child PATH. Evidence:
-[source/desktop CI](https://github.com/madman22222/VSCode_Random_Stuff/actions/runs/40222207466),
-[portable build/smoke CI](https://github.com/madman22222/VSCode_Random_Stuff/actions/runs/40222207716).
-See [implementation details and limits](chess/BACKLOG_PROGRESS.md).
+Local evidence: 130 regression tests (127 previously passed on the virtual desktop;
+new interruption/input cases also pass headlessly), a 100-cycle real training/resume/cancel soak, and forced process-exit
+recovery tests. Current CI must pass before merge and both ZIPs must be rebuilt
+from the same commit. These checks do not establish a playing-strength gain.
 
-**Three cards remain open:** #11 needs real Windows DPI/driver checks; #22 needs
-hands-on screen-reader/accessibility verification; #26 needs native package work
-and owner-provided signing resources. Plans and partial automated checks do not
-count as completing those cards. No chess-strength improvement is claimed.
+**Three cards remain open:** #11 needs physical Windows DPI/driver checks; #22
+needs hands-on screen-reader verification; #26 needs native package work and
+owner-provided signing resources. Synthetic Tk scaling and CI are partial
+evidence and do not complete these cards.
 
-The reference/edition update in [PR #46](https://github.com/madman22222/VSCode_Random_Stuff/pull/46)
-expands the suite to **116 tests** and adds a separately tested VS Code source ZIP.
-Both editions share one entry point and release revision. See the
+See [guided learning and testing limits](chess/GUIDED_LEARNING.md), the
 [PDF review](chess/REFERENCE_REVIEW.md) and [VS Code guide](VSCODE_GUIDE.md).
-The earlier CI evidence above describes the backlog batch; PR #46 has its own checks.
 
 ## Board
 
-| Backlog / verification (3) | Ready (0) | In progress (0) | Review / test (0) | Done (47) |
+| Backlog / verification (3) | Ready (0) | In progress (0) | Review / test (0) | Done (52) |
 | --- | --- | --- | --- | --- |
 | **P1** [#11 Validate Windows display scaling and small-window layouts](https://github.com/madman22222/VSCode_Random_Stuff/issues/11) — external verification pending | — | — | — | [Repair GUI startup and restore the dedicated AI/training modules](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
 | **P2** [#22 Audit keyboard navigation and assistive-technology support](https://github.com/madman22222/VSCode_Random_Stuff/issues/22) — external verification pending | — | — | — | [Fix search depth, move budgets, timeout board restoration, and evaluation errors](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
@@ -85,6 +82,11 @@ The earlier CI evidence above describes the backlog batch; PR #46 has its own ch
 | — | — | — | — | [Fix timeout/increment handling, declared endings and PGN result/header preservation](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) |
 | — | — | — | — | [Optimize search draw checks with reference-equivalence tests and retained A/B evidence](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) |
 | — | — | — | — | [Ship a VS Code edition and portable app from one source with matching, tested release ZIPs](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) |
+| — | — | — | — | Multi-move puzzle format, automatic replies, legal alternatives and factual feedback — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
+| — | — | — | — | Six guided tactical/endgame lessons with saved progress and recommended next exercise — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
+| — | — | — | — | Review continuations, tactical facts, details/export and uncertainty labels — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
+| — | — | — | — | Independent 16-position evaluation corpus with checksum, memory overlap and per-game ledger — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
+| — | — | — | — | Atomic memory/progress recovery journal, interrupted-process regressions, soak runner and compatible dependency upgrades — [delivery PR](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) |
 
 ## Priorities and recommended order
 
@@ -124,6 +126,7 @@ automatically. Issue checklists track acceptance; the board tracks workflow stat
 | [#29](https://github.com/madman22222/VSCode_Random_Stuff/pull/29) | Populated project Kanban, 20 improvement issues, and planning workflow |
 | [#42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) | 17 validated backlog improvements: profile safety, study/support tools, contextual memory, measured tuning and contribution guidance |
 | [#46](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) | Reference audit, rules/PGN/clock fixes, measured search guards, and synchronized VS Code/Windows releases |
+| [#47](https://github.com/madman22222/VSCode_Random_Stuff/pull/47) | Guided learning, independent evaluation, factual review and recoverable training checkpoints |
 
 Done means delivered in the cited merged PR, not proof of perfect behavior or
 increased chess strength. Future verification/enhancement cards intentionally build

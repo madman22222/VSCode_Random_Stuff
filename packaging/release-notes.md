@@ -31,3 +31,11 @@ This release fixes flag/increment handling, timeout draws, training clock pause
 and PGN results/validation; adds resignation/local draw agreement and an original
 tactical motif pack; and includes measured search draw-check optimization. See the
 reference review for PDF corrections and study/engine limits.
+
+New in this revision: six guided lessons, six multi-move exercises with automatic
+opponent replies and alternative branches, factual review notes with legal
+continuations, and a 16-position independent comparison suite with per-game
+records. Training checkpoints now have a validated memory/progress recovery pair.
+Repeated training/resume/cancel tests and interrupted-save regressions are included.
+Pillow/build tooling updates preserve Python 3.10 source compatibility. Physical
+Windows DPI and screen-reader verification remain open; no strength gain is claimed.

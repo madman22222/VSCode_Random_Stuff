@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "id": "independent-v1",
+  "description": "Original fixed positions; excluded from self-play starting seeds. Memory overlap is reported, not assumed absent.",
+  "positions": [
+    {
+      "id": "opening-1",
+      "category": "opening",
+      "fen": "rnbqkb1r/ppp2ppp/4pn2/3p4/8/1P2P3/PBPP1PPP/RN1QKBNR w KQkq - 0 4"
+    },
+    {
+      "id": "opening-2",
+      "category": "opening",
+      "fen": "rnbqk1nr/ppp1ppbp/6p1/3p4/5P2/4PN2/PPPP2PP/RNBQKB1R w KQkq - 1 4"
+    },
+    {
+      "id": "opening-3",
+      "category": "opening",
+      "fen": "rn1qkbnr/pp2pppp/2p5/3p1b2/8/5NP1/PPPPPPBP/RNBQK2R w KQkq - 2 4"
+    },
+    {
+      "id": "opening-4",
+      "category": "opening",
+      "fen": "rn1qkbnr/pp2pppp/2p5/3pPb2/3P4/8/PPP2PPP/RNBQKBNR w KQkq - 1 4"
+    },
+    {
+      "id": "middlegame-5",
+      "category": "middlegame",
+      "fen": "rn2kb1r/pp3ppp/2p1pn2/q4b2/2BP4/2N2N2/PPP2PPP/R1BQ1RK1 w kq - 0 8"
+    },
+    {
+      "id": "middlegame-6",
+      "category": "middlegame",
+      "fen": "rnbq1rk1/ppp1b1pp/3ppn2/5p2/2PP4/5NP1/PP2PPBP/RNBQ1RK1 w - - 0 7"
+    },
+    {
+      "id": "middlegame-7",
+      "category": "middlegame",
+      "fen": "r2qkb1r/1ppb1ppp/p1np1n2/4p3/B2PP3/2P2N2/PP3PPP/RNBQK2R w KQkq - 1 7"
+    },
+    {
+      "id": "middlegame-8",
+      "category": "middlegame",
+      "fen": "r2qkb1r/pp3ppp/2n1pn2/2pp1b2/3P1B2/2P1PN2/PP1N1PPP/R2QKB1R w KQkq - 0 7"
+    },
+    {
+      "id": "endgame-9",
+      "category": "endgame",
+      "fen": "8/5pk1/6p1/3R4/8/5PK1/8/6r1 w - - 0 1"
+    },
+    {
+      "id": "endgame-10",
+      "category": "endgame",
+      "fen": "8/8/2k5/2p5/2P1K3/8/8/8 w - - 0 1"
+    },
+    {
+      "id": "endgame-11",
+      "category": "endgame",
+      "fen": "8/6k1/5pp1/8/3N4/5PP1/6K1/8 b - - 0 1"
+    },
+    {
+      "id": "endgame-12",
+      "category": "endgame",
+      "fen": "8/2b3k1/5p2/6p1/3B4/5P2/6PK/8 w - - 0 1"
+    },
+    {
+      "id": "tactical-13",
+      "category": "tactical",
+      "fen": "3r2k1/pp3ppp/2p5/8/2B5/2P2Q2/PP3PPP/6K1 w - - 0 1"
+    },
+    {
+      "id": "tactical-14",
+      "category": "tactical",
+      "fen": "6k1/pp3ppp/2p5/3q4/8/2N2P2/PP3QPP/6K1 w - - 0 1"
+    },
+    {
+      "id": "tactical-15",
+      "category": "tactical",
+      "fen": "r5k1/5ppp/8/8/8/2B5/5PPP/3R2K1 b - - 0 1"
+    },
+    {
+      "id": "tactical-16",
+      "category": "tactical",
+      "fen": "6k1/5ppp/8/3r4/2N5/8/5PPP/6K1 w - - 0 1"
+    }
+  ]
+}

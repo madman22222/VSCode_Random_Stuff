@@ -6,8 +6,8 @@
 | --- | --- |
 | Play | Mode, difficulty, side, Play/Pause, Hint |
 | Play → Game | Move list, Save/Load PGN, Undo, New, Restart |
-| Play → Practice | Seven puzzles, progressive hints, saved solved progress |
-| Play → Review | Position navigation, Analyze game, Cancel |
+| Play → Practice | Six lessons, 13 exercises, automatic replies, saved progress |
+| Play → Review | Position navigation, Analyze game, legal continuation, Cancel |
 | Training | Start, Stop and save, Resume, settings, memory import/export/reset |
 | Settings → Appearance | Theme, flip board, sound, clock |
 | Settings → Access | Larger text, contrast, image/symbol/letter pieces |
@@ -57,6 +57,7 @@ opponent and requires an even count of at least 2. `--against` accepts `both`,
 | File/folder | Contents |
 | --- | --- |
 | `ai_learn.json.gz` | Compressed move memory (plain `.json` without compression) |
+| `ai_learn.json.checkpoint.json` | Atomic memory/progress recovery pair; preserve with the profile |
 | `ai_learn_readable.json` | Readable memory export |
 | `ai_learn.json.training.json` | Training checkpoint |
 | `ai_learn.json.previous.json` | Previous memory snapshot |
@@ -88,3 +89,7 @@ Support & study also offers Resign and local draw agreement (Two players, after
 both have moved). Declared endings are saved with the PGN result and do not recover
 as unfinished games. See [the reference review](REFERENCE_REVIEW.md) and
 [VS Code guide](../VSCODE_GUIDE.md).
+
+See [guided learning](GUIDED_LEARNING.md) for lesson progression, multi-move packs,
+review limitations and independent evaluation metadata. Resume rejects memory
+changed outside the checkpoint; Start a new run keeps that newer memory.

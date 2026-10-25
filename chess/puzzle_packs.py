@@ -20,7 +20,7 @@ class PackPuzzle:
 
 def load_pack(path):
     pack = read_json(path)
-    if not isinstance(pack, dict) or pack.get('version') != 1:
+    if not isinstance(pack, dict) or type(pack.get('version')) is not int or pack.get('version') not in (1, 2):
         raise ValueError('Unsupported puzzle pack version')
     if not isinstance(pack.get('author'), str) or not pack['author'].strip():
         raise ValueError('Puzzle packs must include author/attribution')
@@ -43,11 +43,24 @@ def load_pack(path):
             raise ValueError('Invalid puzzle title')
         if not isinstance(hints, list) or not 1 <= len(hints) <= 5 or any(not isinstance(h, str) or not 1 <= len(h) <= 500 for h in hints):
             raise ValueError('Supply 1–5 short hints')
-        if not isinstance(solutions, list) or not 1 <= len(solutions) <= 64 or any(not isinstance(m, str) or chess.Move.from_uci(m) not in board.legal_moves for m in solutions):
-            raise ValueError('All solutions must be legal UCI moves')
+        if pack['version'] == 1:
+            if not isinstance(solutions, list) or not 1 <= len(solutions) <= 64 or any(not isinstance(m, str) or chess.Move.from_uci(m) not in board.legal_moves for m in solutions):
+                raise ValueError('All solutions must be legal UCI moves')
         theme, difficulty = item.get('theme', 'Study'), item.get('difficulty', 'Unrated')
         if not isinstance(theme, str) or not isinstance(difficulty, str) or len(theme) > 40 or len(difficulty) > 40:
             raise ValueError('Invalid theme/difficulty')
+        if pack['version'] == 2:
+            from practice_model import SequencePuzzle, validate_lines
+            goal = item.get('goal', 'line')
+            if goal not in ('line', 'mate', 'promotion'):
+                raise ValueError('Unsupported multi-move goal')
+            explanation = item.get('explanation')
+            if not isinstance(explanation, str) or not 1 <= len(explanation) <= 1000:
+                raise ValueError('Supply a short lesson explanation')
+            lines = validate_lines(board, item.get('lines'), goal)
+            result.append(SequencePuzzle(f'{pack_id}:{item["id"]}', f'{theme} / {difficulty}: {title}',
+                                         board.fen(), tuple(hints), lines, explanation, goal))
+            continue
         result.append(PackPuzzle(f'{pack_id}:{item["id"]}', f'{theme} / {difficulty}: {title}',
                                  board.fen(), tuple(hints), tuple(solutions)))
     return result
