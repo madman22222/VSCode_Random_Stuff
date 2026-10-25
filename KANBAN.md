@@ -8,9 +8,28 @@ view. Each proposed issue contains its goal, acceptance checklist, and priority.
 Completed cards link to merged implementation evidence instead of creating
 retroactive duplicate issues.
 
+## Current status
+
+Last checked against repository issues and merged pull requests: **October 25, 2026**.
+
+| Backlog | Ready | In progress | Review / test | Done |
+| --- | --- | --- | --- | --- |
+| 16 proposed improvements | 4 next tasks | 0 | 0 | 26 delivered feature/planning cards |
+
+All improvement issues **#9–#28 remain open**. No improvement has been marked
+started or complete without implementation evidence. Completed cards include
+25 delivered feature groups plus the merged planning-board setup in PR #29.
+
+### Next tasks
+
+1. [#9 — Back up and restore the complete data profile](https://github.com/madman22222/VSCode_Random_Stuff/issues/9)
+2. [#10 — Add diagnostics and log export](https://github.com/madman22222/VSCode_Random_Stuff/issues/10)
+3. [#11 — Check Windows DPI scaling and small-window layouts](https://github.com/madman22222/VSCode_Random_Stuff/issues/11)
+4. [#12 — Establish performance baselines before optimization](https://github.com/madman22222/VSCode_Random_Stuff/issues/12)
+
 ## Board
 
-| Backlog (16) | Ready (4) | In progress (0) | Review / test (0) | Done (25) |
+| Backlog (16) | Ready (4) | In progress (0) | Review / test (0) | Done (26) |
 | --- | --- | --- | --- | --- |
 | **P1** [#13 Validate and version learning and configuration imports](https://github.com/madman22222/VSCode_Random_Stuff/issues/13) | **P1** [#9 Add one-click backup and restore for the complete data profile](https://github.com/madman22222/VSCode_Random_Stuff/issues/9) | No implementation started | No pending implementation | [Repair GUI startup and restore the dedicated AI/training modules](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
 | **P1** [#14 Expand chess-rule and cancellation regression coverage](https://github.com/madman22222/VSCode_Random_Stuff/issues/14) | **P1** [#10 Add a diagnostics and log export panel](https://github.com/madman22222/VSCode_Random_Stuff/issues/10) | — | — | [Fix search depth, move budgets, timeout board restoration, and evaluation errors](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
@@ -37,6 +56,7 @@ retroactive duplicate issues.
 | — | — | — | — | [Separate resources from writable data; add fallback paths, notices, source archives, and checksums](https://github.com/madman22222/VSCode_Random_Stuff/pull/7) |
 | — | — | — | — | [Test the extracted Windows bundle without Python on PATH and publish only after success](https://github.com/madman22222/VSCode_Random_Stuff/pull/7) |
 | — | — | — | — | [Refresh all user/developer/asset documentation and add the portable build/release guide](https://github.com/madman22222/VSCode_Random_Stuff/pull/8) |
+| — | — | — | — | [Create the populated Kanban, prioritized issues, acceptance checklists, and README link](https://github.com/madman22222/VSCode_Random_Stuff/pull/29) |
 
 ## Priorities and recommended order
 
@@ -75,6 +95,7 @@ automatically. Issue checklists track acceptance; the board tracks workflow stat
 | [#6](https://github.com/madman22222/VSCode_Random_Stuff/pull/6) | Practice, review, recovery, accessibility, and scoring experiments |
 | [#7](https://github.com/madman22222/VSCode_Random_Stuff/pull/7) | Self-contained Windows ZIP and tested release pipeline |
 | [#8](https://github.com/madman22222/VSCode_Random_Stuff/pull/8) | Documentation refresh |
+| [#29](https://github.com/madman22222/VSCode_Random_Stuff/pull/29) | Populated project Kanban, 20 improvement issues, and planning workflow |
 
 Done means delivered in the cited merged PR, not proof of perfect behavior or
 increased chess strength. Future verification/enhancement cards intentionally build
