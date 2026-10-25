@@ -134,3 +134,12 @@ Benchmark commands and raw A/B/smoke reports are in `benchmarks/`. The retained
 reference evaluation permits repeatable comparisons. The small migration smoke
 uses cutoff-heavy games and cannot establish playing-strength improvement.
 See [manual verification](MANUAL_VERIFICATION.md) for real DPI/screen-reader work.
+
+`game_endings.py` unifies declared results, time forfeits and PGN result building.
+`search_rules.py` uses impossibility guards for prospective draw checks; its output
+is regression-tested against python-chess's full claimable-draw policy.
+
+The VS Code workspace, `vscode_tests.py` bridge, and portable build share the same
+source. `packaging/build_source.py` supplies the developer ZIP and embedded source
+archive; `smoke_source.py` tests its extracted entry point. Both release artifacts
+carry the same revision and a dirty-tree indicator. See [VS Code](../VSCODE_GUIDE.md).

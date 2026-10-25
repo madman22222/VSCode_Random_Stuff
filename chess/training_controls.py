@@ -19,6 +19,8 @@ class TrainingControls:
                 raise ValueError('Games must be zero or more; batch size and move time must be positive.')
             self._cancel_search()
             self.game_started = False
+            if self.clock:
+                self.clock.stop()
             self._update_start_pause_button()
             self.controls_notebook.select(self.control_pages[1])
             # Training has its own search state; it never shares a gameplay log.

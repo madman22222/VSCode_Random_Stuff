@@ -1,0 +1,8 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {"name": "Chess Studio: play (shared source)", "type": "debugpy", "request": "launch", "program": "${workspaceFolder}/chess/main.py", "cwd": "${workspaceFolder}", "console": "integratedTerminal", "justMyCode": true},
+    {"name": "Chess Studio: train 2 test games", "type": "debugpy", "request": "launch", "program": "${workspaceFolder}/chess/main.py", "cwd": "${workspaceFolder}", "console": "integratedTerminal", "args": ["--training", "--games", "2", "--depth", "1", "--move-ms", "20", "--max-plies", "40", "--learning-file", "${workspaceFolder}/dev-data/ai_learn.json"]},
+    {"name": "Chess Studio: run regression tests", "type": "debugpy", "request": "launch", "program": "${workspaceFolder}/run_tests.py", "cwd": "${workspaceFolder}", "console": "integratedTerminal"}
+  ]
+}

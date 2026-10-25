@@ -47,3 +47,10 @@ closes the app; reopen afterward. Diagnostics exclude logs and game memory by de
 Training now has Dashboard, Run settings and Memory pages. Version-3 learning keeps
 legacy records but learns contextual position records separately; no strength gain
 is guaranteed. Back up custom CLI files outside data/ separately.
+
+DEVELOPER EDITION
+ChessStudio-VSCode.zip is released from the same source revision. It requires
+Python and VS Code; the portable EXE does not. Source edits take effect in a newly
+built EXE, not in an older downloaded app. Resign and local draw agreement are
+available in Support & study. PDF study references and original motif practice
+are documented in chess/REFERENCE_REVIEW.md in the source download.

@@ -24,6 +24,7 @@ from simple_ai import SimpleAI
 from studio_features import StudioFeatures
 from studio_tools import StudioTools
 from training_controls import TrainingControls
+from game_endings import GameEndings, Conclusion, EndReason, timeout_conclusion
 from app_paths import data_dir, resource_dir, training_command
 from tools.batch_pgn_converter import batch_convert
 from engine_manager import EngineManager
@@ -74,7 +75,7 @@ class Tooltip:
 HAS_UPGRADES = True
 
 
-class GameController(TrainingControls, StudioTools, StudioFeatures):
+class GameController(GameEndings, TrainingControls, StudioTools, StudioFeatures):
     """Coordinates the GUI view, AI, and engine manager.
 
     This class owns the game state and provides callbacks for UI events.
@@ -136,6 +137,8 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
         self._ai_started_at = None
         self._hint_thinking = False
         self._timed_out = False
+        self._declared_result = None
+        self._pgn_headers = {}
         self._rendered_moves = None
         self._finished_learning_backup = None
         self._finished_stats_backup = None
@@ -635,7 +638,7 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
             return
         if self._is_ai_turn() or self._timed_out:
             return
-        if self.board.is_game_over(claim_draw=True):
+        if self._game_outcome() is not None:
             return
         piece = self.board.piece_at(square)
         if self.selected is None:
@@ -667,6 +670,8 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
             else:
                 move = chess.Move(self.selected, square)
             if move in self.board.legal_moves:
+                if self._clock_expired():
+                    return
                 # Determine move type for sound effects
                 is_capture = self.board.is_capture(move)
                 is_castle = sel_piece is not None and sel_piece.piece_type == chess.KING and abs(chess.square_file(self.selected) - chess.square_file(square)) == 2
@@ -701,7 +706,7 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
                 self.update_board()
                 
                 self.feedback_var.set('Your move is on the board.')
-                if not self.board.is_game_over(claim_draw=True) and self.game_started and self._is_ai_turn():
+                if self._game_outcome() is None and self.game_started and self._is_ai_turn():
                     self._launch_ai_thread(max(1, self.depth_var.get()))
             else:
                 self.feedback_var.set(illegal_move_message(self.board, move))
@@ -799,6 +804,8 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
     def _accept_ai_move(self, session, fen, move, metrics, error):
         if session != self._ai_session_id or fen != self.board.fen():
             return
+        if self._clock_expired():
+            return
         self.ai_thinking = False
         self._ai_started_at = None
         self.master.configure(cursor='')
@@ -821,14 +828,14 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
         self.update_board(force=True)
         self.metrics_var.set(f'{san}: depth {metrics.get("depth", 0)}, '
                              f'{metrics.get("nodes", 0)} nodes, {metrics.get("source", "AI")}')
-        if self.play_mode == 'ai_vs_ai' and self.game_started and not self.board.is_game_over(claim_draw=True):
+        if self.play_mode == 'ai_vs_ai' and self.game_started and self._game_outcome() is None:
             token = self._ai_session_id
             delay = max(40, int(self.ai_delay_var.get()))
             self.master.after(delay, lambda: self._launch_ai_thread() if (
                 token == self._ai_session_id and self.game_started) else None)
 
     def _launch_ai_thread(self, depth=None):
-        if self.ai_thinking or self._closed or self.board.is_game_over(claim_draw=True):
+        if self.ai_thinking or self._closed or self._game_outcome() is not None:
             return
         self.ai_thinking = True
         self._ai_started_at = time.monotonic()
@@ -848,7 +855,7 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
             return self._practice_hint()
         if self._activity == 'review':
             return self._analyze_review()
-        if self.ai_thinking or self._hint_thinking or self.board.is_game_over(claim_draw=True):
+        if self.ai_thinking or self._hint_thinking or self._game_outcome() is not None:
             return
         self._hint_thinking = True
         session, board, ai = self._ai_session_id, self.board.copy(), self.ai.fork()
@@ -943,14 +950,13 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
             for line in lines:
                 self.move_list.insert(tk.END, line)
             self.move_list.see(tk.END)
-        outcome = self.board.outcome(claim_draw=True)
+        outcome = self._game_outcome()
         game_over_now = outcome is not None
-        if self._timed_out:
-            self.status.configure(text="Game ended on time. Press New for another game.")
-        elif outcome:
+        if outcome:
             if outcome.winner is not None:
                 winner = 'White' if outcome.winner == chess.WHITE else 'Black'
-                self.status.configure(text=f'Checkmate — {winner} wins')
+                reason = outcome.termination.name.replace('_', ' ').capitalize()
+                self.status.configure(text=f'{reason} — {winner} wins')
             else:
                 reason = outcome.termination.name.replace('_', ' ').lower()
                 self.status.configure(text=f'Draw — {reason}')
@@ -975,9 +981,8 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
             if game_over_now and hasattr(self, 'ai') and self.ai:
                 if not getattr(self, '_learn_finalized', False):
                     result = 'draw'
-                    if self.board.is_checkmate():
-                        # If it's checkmate, current turn is the side that cannot move (was mated)
-                        result = 'black' if self.board.turn == chess.WHITE else 'white'
+                    if outcome.winner is not None:
+                        result = 'white' if outcome.winner else 'black'
                     self._finished_log = list(self.ai.game_log)
                     self._finished_learning_backup = {
                         key + '|' + move: copy.deepcopy(self.ai.learning_db.get(key + '|' + move))
@@ -1023,6 +1028,8 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
             self._finished_log = None
             self._finished_stats_backup = None
             self._timed_out = False
+            self._declared_result = None
+            self._pgn_headers = {}
             if self.clock:
                 self.reset_clock()
             # Reset board/state
@@ -1064,17 +1071,12 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
 
     def on_clock_timeout(self, is_white: bool) -> None:
         """Handle chess clock timeout."""
-        self._cancel_search()
-        self._timed_out = True
-        self.game_started = False
-        self._update_start_pause_button()
-        winner = "Black" if is_white else "White"
-        self.status.configure(text=f"Time's up! {winner} wins on time")
-        messagebox.showinfo("Time's Up!", f"{winner} wins on time!")
-        if self.config:
-            result = 'black' if is_white else 'white'
-            self.config.update_statistics(result)
-    
+        if self._activity != 'game' or self._game_outcome() is not None:
+            return
+        conclusion = timeout_conclusion(self.board, is_white)
+        if self._declare_result(conclusion):
+            messagebox.showinfo("Time's up", self.status.cget('text'))
+
     def flip_board(self) -> None:
         """Flip the board orientation."""
         try:
@@ -1199,7 +1201,7 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
         if self.training_ai and self.training_ai.running:
             self.feedback_var.set('Stop and save training before playing.')
             return
-        if self.board.is_game_over(claim_draw=True) or self._timed_out:
+        if self._game_outcome() is not None or self._timed_out:
             self.new_game()
         self.game_started = not self.game_started
         if not self.game_started:
@@ -1698,6 +1700,7 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
         self.move_history = list(self.board.move_stack)
         self._learn_finalized = False
         self._timed_out = False
+        self._declared_result = None
         self.selected = None
         self.game_started = False
         if self.clock:
@@ -1734,13 +1737,7 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
             pass
 
     def save_pgn(self):
-        game = chess.pgn.Game()
-        game.setup(self.board.root())
-        node = game
-        b = self.board.root()
-        for mv in self.board.move_stack:
-            node = node.add_variation(mv)
-            b.push(mv)
+        game = self.current_pgn()
         file = filedialog.asksaveasfilename(defaultextension='.pgn', filetypes=[('PGN files', '*.pgn')])
         if file:
             with open(file, 'w', encoding='utf-8') as f:
@@ -1767,13 +1764,7 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
                 suffix = f"_{result}"
             out_path = os.path.join(autos_dir, f'game_{ts}{suffix}.pgn')
 
-            game = chess.pgn.Game()
-            game.setup(self.board.root())
-            node = game
-            b = self.board.root()
-            for mv in self.board.move_stack:
-                node = node.add_variation(mv)
-                b.push(mv)
+            game = self.current_pgn()
             with open(out_path, 'w', encoding='utf-8') as f:
                 exporter = chess.pgn.FileExporter(f)
                 game.accept(exporter)
@@ -1802,9 +1793,24 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
             if game is None:
                 messagebox.showerror('Error', 'No game found in PGN')
                 return
+            if game.errors:
+                raise ValueError('PGN contains invalid moves; no partial game was loaded')
             board = game.board()
+            if not board.is_valid():
+                raise ValueError('Invalid PGN starting position')
             for mv in game.mainline_moves():
+                if mv not in board.legal_moves:
+                    raise ValueError('Illegal move in PGN')
                 board.push(mv)
+            declared = None
+            result = game.headers.get('Result', '*')
+            if result not in ('*', '1-0', '0-1', '1/2-1/2'):
+                raise ValueError('Invalid PGN result')
+            natural = board.outcome(claim_draw=True)
+            if natural and result != '*' and result != natural.result():
+                raise ValueError('PGN result contradicts the final board')
+            if natural is None and result != '*':
+                declared = Conclusion(EndReason.IMPORTED_RESULT, None if result == '1/2-1/2' else result == '1-0')
             self._cancel_search()
             self.game_started = False
             self.selected = None
@@ -1812,7 +1818,9 @@ class GameController(TrainingControls, StudioTools, StudioFeatures):
             self._finished_learning_backup = None
             self._finished_log = None
             self._finished_stats_backup = None
-            self._learn_finalized = board.is_game_over(claim_draw=True)
+            self._learn_finalized = board.is_game_over(claim_draw=True) or declared is not None
+            self._declared_result = declared
+            self._pgn_headers = dict(game.headers)
             self._timed_out = False
             self.board = board
             self.move_history = list(board.move_stack)

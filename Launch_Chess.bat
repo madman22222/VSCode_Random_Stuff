@@ -13,7 +13,7 @@ if errorlevel 1 goto failed
 ".venv\Scripts\python.exe" -c "import tkinter, chess.pgn, PIL" >nul 2>nul
 if not errorlevel 1 goto launch
 echo Installing Chess Studio dependencies for the first launch...
-".venv\Scripts\python.exe" -m pip install -r chess\requirements.txt
+".venv\Scripts\python.exe" -m pip install -c packaging\constraints-build.txt -r chess\requirements.txt
 if errorlevel 1 goto failed
 :launch
 ".venv\Scripts\python.exe" chess\main.py

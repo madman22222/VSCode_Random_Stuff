@@ -52,7 +52,8 @@ class ChessClock:
         if not self.running:
             return
         
-        self._consume_elapsed()
+        if self.check_timeout():
+            return
         # Add increment to current player
         if self.active_color:
             self.white_time += self.increment
@@ -68,18 +69,26 @@ class ChessClock:
         if not self.running or not self.root:
             return
         
-        self._consume_elapsed()
-        remaining = self.white_time if self.active_color else self.black_time
-        if remaining <= 0:
-            color = self.active_color
-            self.stop()
-            if self.on_timeout:
-                self.on_timeout(color)
+        if self.check_timeout():
             return
 
         # Schedule next tick
         self.timer_id = self.root.after(100, self._tick)
     
+    def check_timeout(self):
+        """Settle elapsed time before accepting a move or adding increment."""
+        if not self.running:
+            return False
+        self._consume_elapsed()
+        remaining = self.white_time if self.active_color else self.black_time
+        if remaining > 0:
+            return False
+        color = self.active_color
+        self.stop()
+        if self.on_timeout:
+            self.on_timeout(color)
+        return True
+
     def _consume_elapsed(self):
         now = time.monotonic()
         elapsed = max(0, now - self.last_update)

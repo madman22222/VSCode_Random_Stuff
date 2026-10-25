@@ -12,7 +12,7 @@ retroactive duplicate issues.
 
 Updated October 25, 2026: **17 improvement issues implemented and validated** in
 [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42). The board now
-contains **43 delivered feature/planning cards** (26 earlier cards plus 17 improvements).
+contains **47 delivered feature/planning cards** (43 previous cards plus 4 reference/edition improvements).
 No implementation or review task is currently in progress.
 
 Validation: **103 tests** passed on a Linux virtual desktop and in Windows source
@@ -28,9 +28,15 @@ hands-on screen-reader/accessibility verification; #26 needs native package work
 and owner-provided signing resources. Plans and partial automated checks do not
 count as completing those cards. No chess-strength improvement is claimed.
 
+The reference/edition update in [PR #46](https://github.com/madman22222/VSCode_Random_Stuff/pull/46)
+expands the suite to **116 tests** and adds a separately tested VS Code source ZIP.
+Both editions share one entry point and release revision. See the
+[PDF review](chess/REFERENCE_REVIEW.md) and [VS Code guide](VSCODE_GUIDE.md).
+The earlier CI evidence above describes the backlog batch; PR #46 has its own checks.
+
 ## Board
 
-| Backlog / verification (3) | Ready (0) | In progress (0) | Review / test (0) | Done (43) |
+| Backlog / verification (3) | Ready (0) | In progress (0) | Review / test (0) | Done (47) |
 | --- | --- | --- | --- | --- |
 | **P1** [#11 Validate Windows display scaling and small-window layouts](https://github.com/madman22222/VSCode_Random_Stuff/issues/11) — external verification pending | — | — | — | [Repair GUI startup and restore the dedicated AI/training modules](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
 | **P2** [#22 Audit keyboard navigation and assistive-technology support](https://github.com/madman22222/VSCode_Random_Stuff/issues/22) — external verification pending | — | — | — | [Fix search depth, move budgets, timeout board restoration, and evaluation errors](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
@@ -75,6 +81,10 @@ count as completing those cards. No chess-strength improvement is claimed.
 | — | — | — | — | **P2** [#25 Add an update notification and data-safe upgrade walkthrough](https://github.com/madman22222/VSCode_Random_Stuff/issues/25) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
 | — | — | — | — | **P3** [#27 Add local FEN setup and position-analysis tools](https://github.com/madman22222/VSCode_Random_Stuff/issues/27) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
 | — | — | — | — | **P2** [#28 Improve issue reporting and contribution onboarding](https://github.com/madman22222/VSCode_Random_Stuff/issues/28) — [PR #42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) |
+| — | — | — | — | [Review the supplied chess references, document corrections/limits and add original motif practice](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) |
+| — | — | — | — | [Fix timeout/increment handling, declared endings and PGN result/header preservation](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) |
+| — | — | — | — | [Optimize search draw checks with reference-equivalence tests and retained A/B evidence](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) |
+| — | — | — | — | [Ship a VS Code edition and portable app from one source with matching, tested release ZIPs](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) |
 
 ## Priorities and recommended order
 
@@ -113,6 +123,7 @@ automatically. Issue checklists track acceptance; the board tracks workflow stat
 | [#8](https://github.com/madman22222/VSCode_Random_Stuff/pull/8) | Documentation refresh |
 | [#29](https://github.com/madman22222/VSCode_Random_Stuff/pull/29) | Populated project Kanban, 20 improvement issues, and planning workflow |
 | [#42](https://github.com/madman22222/VSCode_Random_Stuff/pull/42) | 17 validated backlog improvements: profile safety, study/support tools, contextual memory, measured tuning and contribution guidance |
+| [#46](https://github.com/madman22222/VSCode_Random_Stuff/pull/46) | Reference audit, rules/PGN/clock fixes, measured search guards, and synchronized VS Code/Windows releases |
 
 Done means delivered in the cited merged PR, not proof of perfect behavior or
 increased chess strength. Future verification/enhancement cards intentionally build

@@ -23,6 +23,16 @@ The green **Code → Download ZIP** button downloads development source code.
 Use [Releases](https://github.com/madman22222/VSCode_Random_Stuff/releases/latest)
 for the ready-to-run app. macOS/Linux users currently run from source.
 
+## VS Code developer edition
+
+[Download ChessStudio-VSCode.zip](https://github.com/madman22222/VSCode_Random_Stuff/releases/latest/download/ChessStudio-VSCode.zip)
+and follow [VS Code setup](VSCODE_GUIDE.md). This requires Python and VS Code.
+Both editions use the same application source and are built/tested from the same
+commit; download rebuilt ZIPs to receive updates. Personal saves are separate.
+
+See the [chess reference review](chess/REFERENCE_REVIEW.md) for rules covered,
+corrections in the supplied PDFs, regression evidence and engine limitations.
+
 ## What is included
 
 - A resizable board; Play AI, Two players, and Watch AI modes; hints and PGN save/load.

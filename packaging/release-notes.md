@@ -22,3 +22,12 @@ completed and checkpointed games. Learning version 3 adds contextual position ke
 while preserving legacy records. Search/memory limits and measured evaluation tuning
 are included; no chess-strength improvement is claimed. See the bundled README
 before restoring data or upgrading.
+
+Also available: **ChessStudio-VSCode.zip**, running the same `chess/main.py` with
+Python and VS Code. Both ZIPs carry the same source revision. Extract the developer
+ZIP, open `ChessStudio.code-workspace`, and follow `VSCODE_GUIDE.md`.
+
+This release fixes flag/increment handling, timeout draws, training clock pause
+and PGN results/validation; adds resignation/local draw agreement and an original
+tactical motif pack; and includes measured search draw-check optimization. See the
+reference review for PDF corrections and study/engine limits.

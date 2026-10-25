@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "id": "reference-themes",
+  "author": "Chess Studio: original hand-built motif demonstrations, not copied book diagrams",
+  "puzzles": [
+    {
+      "id": "knight-fork",
+      "title": "Check the king and attack the rook",
+      "theme": "Fork",
+      "difficulty": "Starter",
+      "fen": "8/2r1k3/8/8/8/2N5/8/6K1 w - - 0 1",
+      "hints": [
+        "Find a knight move that attacks two pieces.",
+        "Look at d5."
+      ],
+      "solutions": [
+        "c3d5"
+      ]
+    },
+    {
+      "id": "absolute-pin",
+      "title": "Pin the knight to its king",
+      "theme": "Pin",
+      "difficulty": "Starter",
+      "fen": "4k3/8/2n5/8/2B5/8/8/6K1 w - - 0 1",
+      "hints": [
+        "Put the bishop on a line through the knight and king.",
+        "Look at b5."
+      ],
+      "solutions": [
+        "c4b5"
+      ]
+    },
+    {
+      "id": "rook-skewer",
+      "title": "Check along the king and rook diagonal",
+      "theme": "Skewer",
+      "difficulty": "Starter",
+      "fen": "4r3/3k4/8/1K6/8/8/6B1/8 w - - 0 1",
+      "hints": [
+        "A bishop check can reveal an attack on the rook behind the king.",
+        "Look at c6."
+      ],
+      "solutions": [
+        "g2c6"
+      ]
+    },
+    {
+      "id": "discovered-check",
+      "title": "Uncover the rook's check",
+      "theme": "Discovery",
+      "difficulty": "Starter",
+      "fen": "4k3/1q6/8/8/4N3/8/8/4R1K1 w - - 0 1",
+      "hints": [
+        "Move the knight off the e-file.",
+        "Nc5 also attacks the queen."
+      ],
+      "solutions": [
+        "e4c5"
+      ]
+    }
+  ]
+}

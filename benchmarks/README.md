@@ -30,3 +30,8 @@ budgets and a generous ceiling. It asserts matching moves and visited nodes.
 The committed `evaluation-ab.json` is one local run, not a general speed claim.
 The migration smoke report records retained legacy counts, storage and a tiny
 paired comparison; mostly cutoff draws make it unsuitable as strength evidence.
+
+`python benchmarks/search_draw_ab.py --output search-draw-ab.json` compares guarded
+prospective-draw checks with full reference checks, with matching moves/node counts
+and 400 seeded semantic comparisons. The committed report is one machine's timing
+data, not a playing-strength result.

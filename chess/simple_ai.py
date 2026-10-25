@@ -9,6 +9,7 @@ import time
 from collections import OrderedDict
 import os
 from app_paths import data_dir
+from search_rules import search_outcome
 from learning_keys import position_key, from_fen
 from typing import Optional
 
@@ -387,11 +388,13 @@ class SimpleAI:
         if deadline is not None and time.monotonic() >= deadline:
             raise TimeoutError('Search time budget reached')
 
-    def quiescence(self, board, alpha, beta, ply=0):
+    def quiescence(self, board, alpha, beta, ply=0, _terminal_checked=False):
         self._check_deadline()
         self.nodes_searched += 1
-        if board.is_game_over():
-            return -9999999 if board.is_checkmate() else 0
+        if not _terminal_checked:
+            outcome = search_outcome(board)
+            if outcome is not None:
+                return -9999999 if outcome.winner is not None else 0
         if ply >= 16:
             return self.evaluate(board)
         in_check = board.is_check()
@@ -417,10 +420,11 @@ class SimpleAI:
     def negamax(self, board, depth, alpha, beta):
         self._check_deadline()
         self.nodes_searched += 1
-        if board.is_game_over(claim_draw=True):
-            return -9999999 if board.is_checkmate() else 0
+        outcome = search_outcome(board)
+        if outcome is not None:
+            return -9999999 if outcome.winner is not None else 0
         if depth <= 0:
-            return self.quiescence(board, alpha, beta)
+            return self.quiescence(board, alpha, beta, _terminal_checked=True)
         best_score = -10000000
         best_move = None
         original_alpha = alpha

@@ -82,3 +82,18 @@ checks still gate publication. Update constraints and retained notices together.
 See [portability/signing plan](PORTABILITY_PLAN.md) for work that still needs native
 hosts and owner-provided signing accounts. No macOS/Linux portable release or
 signed Windows build is currently claimed.
+
+The workflow now builds `ChessStudio-VSCode.zip` and its SHA-256 alongside the
+Windows ZIP. The source edition includes the workspace/debug/test configuration
+and excludes runtime profiles. Both are built at the same commit and smoke-tested
+after extraction before publication. `build_source.py` supplies the file selection
+for both the source download and embedded corresponding-source archive.
+
+```powershell
+python packaging/build_source.py
+python packaging/smoke_source.py --zip dist/ChessStudio-VSCode.zip --revision (git rev-parse HEAD)
+```
+
+Use a clean committed checkout for release builds. `worktree_dirty` records local
+changes; untracked new modules are not release sources. Setup uses reviewed runtime
+constraints; Python/VS Code are required only for the developer edition.

@@ -9,6 +9,7 @@ class ReviewRunner:
         self.ai.depth = depth
         self.nodes = nodes
         self.rows = []
+        self.headers = {}
         self.running = False
         self.last_error = None
         self.thread = None
@@ -75,6 +76,8 @@ def annotated_pgn(runner):
     """Export a separate PGN; preserve start position and never change source board."""
     import chess.pgn
     game = chess.pgn.Game.from_board(runner.board)
+    game.headers.update(runner.headers)
+    game.setup(runner.board.root())
     node = game
     for row in runner.rows:
         if not node.variations:
