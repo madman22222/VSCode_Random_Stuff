@@ -1,3 +1,31 @@
+## Portable download: no Python required
+
+For Windows 10/11 x64, download **ChessStudio-Windows.zip** from the repository's
+[latest release](https://github.com/madman22222/VSCode_Random_Stuff/releases/latest),
+extract the entire ZIP, and double-click **ChessStudio.exe** in the ChessStudio
+folder. Keep `_internal` beside the executable. No installer, Python, pip,
+VS Code, or network connection is needed for the built-in chess features.
+
+Portable saves go in `data/` next to the executable. If the app is in a protected
+folder, saves fall back to `%LOCALAPPDATA%\ChessStudio`. To upgrade, preserve the
+old `data/` and copy it into the newly extracted folder. Existing source users
+can migrate their learning JSON/gzip, training/previous/benchmark JSON, preferences,
+and `last_session.json` from `chess/` into portable `data/`.
+
+The optional **ChessStudio-CLI.exe** accepts the same training/comparison flags as
+`python chess/main.py`. The normal GUI executable needs no terminal. The ZIP also
+contains license notices, optional source archives, and exact build information.
+
+Maintainers build on Windows with `python -m pip install -r packaging/requirements-build.txt`
+then `python packaging/build_windows.py`. The Windows portable workflow builds
+on pull requests and publishes a ready-to-run release on main only after source
+regressions and an extracted-bundle smoke check pass. That check removes Python
+from the child PATH and runs from an unrelated directory, testing assets, Tk/Pillow,
+play, saves, practice, training, comparison, review, conversion, and the console
+companion. The adjacent `.zip.sha256` file records the exact ZIP checksum.
+
+The source-code setup below remains available for development.
+
 # Chess Studio
 
 Desktop chess with a resizable board, a built-in AI, optional hints, self-play

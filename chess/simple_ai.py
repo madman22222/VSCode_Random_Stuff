@@ -7,6 +7,7 @@ import chess  # type: ignore
 import chess.pgn  # type: ignore
 import time
 import os
+from app_paths import data_dir
 from typing import Optional
 
 try:
@@ -67,7 +68,7 @@ class SimpleAI:
         self.use_outcome_scoring = False
         self.game_log = []
         self._writer_lease = None
-        self._learning_path = os.fspath(learning_path) if learning_path is not None else os.path.join(os.path.dirname(__file__), 'ai_learn.json')
+        self._learning_path = os.fspath(learning_path) if learning_path is not None else os.fspath(data_dir() / 'ai_learn.json')
         self._learning_path_gz = self._learning_path + '.gz'
         if load_learning:
             self._load_learning_db()

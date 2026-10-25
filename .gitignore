@@ -13,3 +13,6 @@ metrics_sample.csv
 *.previous.json
 last_session.json
 last_session.invalid-*.json
+build/
+dist/
+portable-smoke-report.json
