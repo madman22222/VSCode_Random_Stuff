@@ -1,3 +1,5 @@
+# Chess Studio
+
 ## Portable download: no Python required
 
 For Windows 10/11 x64, download **ChessStudio-Windows.zip** from the repository's
@@ -25,8 +27,6 @@ play, saves, practice, training, comparison, review, conversion, and the console
 companion. The adjacent `.zip.sha256` file records the exact ZIP checksum.
 
 The source-code setup below remains available for development.
-
-# Chess Studio
 
 Desktop chess with a resizable board, a built-in AI, optional hints, self-play
 training, and comparisons against an untrained version of the same engine.
@@ -119,7 +119,7 @@ search depths on different hardware, so training is not bit-for-bit reproducible
 ## Measure learning
 
 The **Compare** tab runs a frozen copy of the saved AI against an identical
-engine with learning disabled. Each seeded opening is played twice with colors
+engine with learning disabled and, by default, the saved previous version. Each seeded opening is played twice with colors
 swapped. Both sides use equal depth/node budgets. Neither engine learns during
 the comparison. Results are saved and shown again next launch; cancellation
 retains completed games but marks the result cancelled.
@@ -140,12 +140,16 @@ This is a search engine with outcome-based move memory, not a neural network.
 It records wins, losses, and draws for played position/move pairs, then uses
 those records in move ordering. Training does **not** guarantee stronger play.
 
-Default files beside the code:
+Default files in portable `data/` or, when running from source, `chess/`
+(independent of the working directory):
 
 - `ai_learn.json.gz`: move memory (or `ai_learn.json` without compression).
 - `ai_learn_readable.json`: readable memory export.
 - `ai_learn.json.training.json`: counters and training settings.
 - `ai_learn.json.benchmark.json`: latest comparison result.
+- `ai_learn.json.previous.json`: pre-training memory snapshot.
+- `last_session.json`: unfinished-game recovery.
+- `autosaves/`: PGNs when automatic game-end saving is enabled.
 - `chess_config.json`: preferences, saved atomically independent of launch folder.
 
 Checkpoints replace files atomically. An OS-held writer lock rejects competing
@@ -250,3 +254,28 @@ A local microbenchmark compares repeated unchanged redraws; it is not an FPS or
 cross-machine guarantee. Search-score priors are skipped entirely when inactive.
 Clocks use monotonic time, settle partial ticks on stop/switch, and cancel the
 old timer before starting another one.
+
+## Tools and troubleshooting
+
+**Tools** contains optional Stockfish detection/download/verification, the engine
+toggle, metrics export, and batch PGN conversion. Downloads require a connection;
+the built-in engine does not. Stockfish is a separate optional executable.
+
+See [Quick start](QUICK_START.md), [Quick reference](QUICK_REFERENCE.md), and
+[Upgrade and troubleshooting guide](UPGRADES_GUIDE.md). Developer information is
+in [Technical documentation](DOCUMENTATION.md), [AI notes](AI_IMPROVEMENTS.md),
+and the [Windows packaging guide](../packaging/README.md).
+
+Portable console examples (PowerShell, from the extracted ChessStudio folder):
+
+```powershell
+.\ChessStudio-CLI.exe --training --games 10 --depth 2 --move-ms 100 --batch-size 5
+.\ChessStudio-CLI.exe --training --resume --games 10
+.\ChessStudio-CLI.exe --benchmark --games 20 --against both
+```
+
+Use `--help` for the full argument list. `--learning-file` selects a separate
+memory database for that command; use it again on later commands for that profile.
+Relative custom paths resolve against the command's working directory.
+`CHESS_STUDIO_DATA_DIR` overrides the default writable folder for a process.
+Close other writers and back up data before moving or replacing a profile.

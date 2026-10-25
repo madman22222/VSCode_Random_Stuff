@@ -11,3 +11,6 @@ optional and is not bundled. See the included README and BUILD_INFO.json.
 
 The SHA-256 file lets you verify the ZIP. The release workflow tests the extracted
 application with Python removed from the child process PATH before publishing.
+
+Full user guide: https://github.com/madman22222/VSCode_Random_Stuff/blob/main/chess/README.md
+Upgrade and troubleshooting: https://github.com/madman22222/VSCode_Random_Stuff/blob/main/chess/UPGRADES_GUIDE.md
