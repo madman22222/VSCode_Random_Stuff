@@ -1,14 +1,14 @@
 """Configuration manager for persisting user preferences."""
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 
 class ConfigManager:
     """Handles loading and saving application configuration to JSON file."""
     
-    def __init__(self, config_file: str = 'chess_config.json'):
-        self.config_file = config_file
+    def __init__(self, config_file=None):
+        self.config_file = config_file or os.path.join(os.path.dirname(__file__), 'chess_config.json')
         self.config: Dict[str, Any] = self._load_config()
     
     def _load_config(self) -> Dict[str, Any]:
@@ -52,12 +52,12 @@ class ConfigManager:
     
     def save_config(self) -> None:
         """Save current configuration to file."""
+        from training_ai import atomic_json
         try:
-            with open(self.config_file, 'w') as f:
-                json.dump(self.config, f, indent=2)
-        except Exception as e:
-            print(f"Error saving config: {e}")
-    
+            atomic_json(self.config_file, self.config)
+        except (OSError, TypeError, ValueError) as exc:
+            print(f'Error saving config: {exc}')
+
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value."""
         return self.config.get(key, default)

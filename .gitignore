@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.coverage
+htmlcov/
+coverage.xml
+coverage.txt
+test-results.txt
+metrics_sample.csv
+*.training.json
+*.benchmark.json
+*.json.lock

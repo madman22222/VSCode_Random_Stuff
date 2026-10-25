@@ -6,7 +6,7 @@ Default behavior launches the GUI. Use CLI flags to run headless training.
 import argparse
 import sys
 from simple_ai import SimpleAI
-from training_ai import TrainingAI
+from training_ai import TrainingAI, BenchmarkRunner
 
 
 def run_gui() -> None:
@@ -14,7 +14,7 @@ def run_gui() -> None:
     from game_controller import GameController
 
     root = tk.Tk()
-    app = GameController(root)
+    GameController(root)
     root.mainloop()
 
 
@@ -44,8 +44,15 @@ def run_training(args) -> int:
         move_time_limit=move_time_sec,
         max_games=total_games,
         max_moves=args.max_plies,
+        exploration_rate=args.exploration,
+        varied_starts=not args.no_varied_starts,
+        seed=args.seed, resume=args.resume,
     )
-    trainer.start()
+    try:
+        trainer.start()
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f'Cannot start training: {exc}', file=sys.stderr)
+        return 1
 
     print("Training started. Press Ctrl+C to stop and save.")
     try:
@@ -64,6 +71,12 @@ def run_training(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Chess GUI and headless training")
+    p.add_argument("--benchmark", action="store_true", help="Compare saved learning against an untrained engine")
+    p.add_argument("--resume", action="store_true", help="Resume saved training counters; games is the additional game limit")
+    p.add_argument("--exploration", type=float, default=0.10, help="Early-game exploration probability (0 to 1)")
+    p.add_argument("--no-varied-starts", action="store_true", help="Always train from the initial position")
+    p.add_argument("--seed", type=int, default=42, help="Opening/exploration random seed")
+    p.add_argument("--nodes", type=int, default=500, help="Comparison search nodes per move")
     p.add_argument("--training", action="store_true", help="Run headless Training AI instead of GUI")
     p.add_argument("--depth", type=int, default=3, help="AI search depth (default: 3)")
     p.add_argument("--batch-size", type=int, default=100, help="Training: games per batch before saving (default: 100)")
@@ -83,6 +96,26 @@ def main(argv=None):
     if args.games < 0 or args.depth < 1 or args.max_plies < 1 or args.move_ms < 1 or args.batch_size < 1:
         parser.error("Depth, move time, batch size and max plies must be positive; games cannot be negative")
 
+    if not 0 <= args.exploration <= 1 or args.nodes < 1:
+        parser.error("Exploration must be between 0 and 1; nodes must be positive")
+    if args.training and args.benchmark:
+        parser.error("Choose training or comparison, not both")
+    if args.benchmark:
+        import json
+        games = args.games or 4
+        if games < 2 or games % 2:
+            parser.error("Comparison requires an even number of games (at least 2)")
+        runner = BenchmarkRunner(SimpleAI(learning_path=args.learning_file), games=games,
+                                 depth=args.depth, node_limit=args.nodes,
+                                 max_moves=args.max_plies, seed=args.seed)
+        runner.start()
+        try:
+            while runner.thread.is_alive():
+                runner.thread.join(0.25)
+        except KeyboardInterrupt:
+            runner.stop()
+        print(json.dumps(runner.result, indent=2))
+        return 1 if runner.last_error else 0
     if args.training:
         return run_training(args)
     else:
