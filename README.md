@@ -36,12 +36,13 @@ corrections in the supplied PDFs, regression evidence and engine limitations.
 ## What is included
 
 - A resizable board; Play AI, Two players, and Watch AI modes; hints and PGN save/load.
-- Seven tactical practice puzzles, budgeted game review, and unfinished-game recovery.
+- Six guided lessons, 13 built-in exercises with multi-move replies, game review, and unfinished-game recovery.
 - Themes, larger text, high contrast, image/symbol/letter pieces, and keyboard play.
 - A training dashboard with checkpoints, resume, exploration, and varied openings.
 - Paired comparisons against untrained and previous versions, with uncertainty ranges.
 - Profile backup/restore with rollback, named training profiles, and comparison history.
-- FEN study, reviewed PGN export, local puzzle packs, diagnostics, and explicit update checks.
+- FEN study, review continuations, local puzzle packs, diagnostics, and explicit update checks.
+- Independent evaluation positions, per-game comparison records, and recoverable training checkpoints.
 - Optional Stockfish tools, PGN conversion, and a console companion.
 
 Training records move outcomes; this is not a neural network. Difficulty settings
@@ -76,3 +77,9 @@ This project uses substantial AI assistance as an experiment in building and
 improving a complex home project. It is a work in progress; please include your
 platform, build revision, and reproduction steps when reporting an issue on
 [GitHub](https://github.com/madman22222/VSCode_Random_Stuff/issues).
+
+The [guided learning guide](chess/GUIDED_LEARNING.md) explains the lesson sequence,
+authored alternative lines, review limits, independent evaluation, and recovery.
+Maintainers can run the [repeatable soak test](benchmarks/README.md) to check
+training, cancellation, memory bounds and checkpoint reloads. Physical Windows
+DPI/driver and screen-reader verification remain tracked on the [Kanban](KANBAN.md).

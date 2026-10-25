@@ -12,7 +12,8 @@ from training_ai import memory_fingerprint
 
 class StudioFeatures:
     def _init_studio_state(self):
-        self.puzzles = list(PUZZLES)
+        from curriculum import course_puzzles
+        self.puzzles = list(PUZZLES) + list(course_puzzles())
         if self.config:
             from puzzle_packs import load_pack
             from logger import warn
@@ -42,6 +43,7 @@ class StudioFeatures:
 
     def _build_studio_features(self, accessibility_page):
         self.workspace.bind('<<NotebookTabChanged>>', self._workspace_changed)
+        self._build_lessons()
         self.practice_choice = tk.StringVar(master=self.master, value=PUZZLES[0].title)
         picker = ttk.Combobox(self.practice_workspace, textvariable=self.practice_choice,
                              values=[p.title for p in self.puzzles], state='readonly')
@@ -57,6 +59,8 @@ class StudioFeatures:
         tk.Label(self.practice_workspace, textvariable=self.practice_text, wraplength=365,
                  justify='left').pack(fill='x', pady=8)
 
+        self._lesson_changed(save=False)
+
         navigation = tk.Frame(self.review_workspace)
         navigation.pack(fill='x')
         for text, command in (('|<', lambda: self._review_step(-10000)), ('<', lambda: self._review_step(-1)),
@@ -65,6 +69,7 @@ class StudioFeatures:
         row = tk.Frame(self.review_workspace)
         row.pack(fill='x', pady=4)
         tk.Button(row, text='Analyze game', command=self._analyze_review).pack(side='left')
+        tk.Button(row, text='Details', command=self._review_details).pack(side='left', padx=4)
         tk.Button(row, text='Cancel', command=self._cancel_review).pack(side='right')
         self.review_budget = tk.StringVar(master=self.master, value='Quick')
         ttk.Combobox(self.review_workspace, textvariable=self.review_budget, values=('Quick', 'Deeper'),
@@ -204,72 +209,6 @@ class StudioFeatures:
         elif selected == str(self.game_workspace):
             self._return_to_game()
 
-    def _pick_practice(self, event=None):
-        self.practice_index = next(i for i, p in enumerate(self.puzzles) if p.title == self.practice_choice.get())
-        self._load_practice()
-
-    def _load_practice(self):
-        if self._activity != 'practice':
-            return
-        puzzle = self.puzzles[self.practice_index]
-        self.practice_choice.set(puzzle.title)
-        self.board = chess.Board(puzzle.fen)
-        self.practice_done = False
-        self.practice_hint_level = 0
-        self.selected = None
-        self._cancel_search()
-        if self.board_view.flipped != (self.board.turn == chess.BLACK):
-            self.board_view.flip_board()
-        self.update_board(force=True)
-        solved = self.config.get('practice_solved', []) if self.config else []
-        side = 'White' if self.board.turn else 'Black'
-        self.practice_text.set(f'{puzzle.title}: {side} to move.\n{len(set(solved) & {p.id for p in self.puzzles})}/{len(self.puzzles)} puzzles solved.')
-        self.feedback_var.set('Practice mode: your game and clocks are paused.')
-
-    def _practice_click(self, square):
-        if self.practice_done:
-            return
-        piece = self.board.piece_at(square)
-        if self.selected is None or (piece and piece.color == self.board.turn):
-            if piece and piece.color == self.board.turn:
-                self.selected = square
-                self.board_view.show_legal_moves(self.board, square)
-                self.board_view.highlight(square)
-            return
-        mover = self.board.piece_at(self.selected)
-        promotion = chess.QUEEN if mover and mover.piece_type == chess.PAWN and chess.square_rank(square) in (0, 7) else None
-        if promotion is not None and getattr(self.puzzles[self.practice_index], 'goal', '') == 'solution':
-            promotion = self.ask_promotion(self.board.turn)
-            if promotion is None:
-                return
-        move = chess.Move(self.selected, square, promotion=promotion)
-        puzzle = self.puzzles[self.practice_index]
-        if move not in self.board.legal_moves:
-            from chess_coach import illegal_move_message
-            self.practice_text.set(illegal_move_message(self.board, move))
-        elif puzzle.accepts(self.board, move):
-            self.board.push(move)
-            self.practice_done = True
-            solved = list(self.config.get('practice_solved', [])) if self.config else []
-            if puzzle.id not in solved:
-                solved.append(puzzle.id)
-                if self.config:
-                    self.config.set('practice_solved', solved)
-            self.practice_text.set(f'Correct! {len(set(solved) & {p.id for p in self.puzzles})}/{len(self.puzzles)} solved. Choose Next for another puzzle.')
-            self.selected = None
-            self.update_board(force=True)
-        else:
-            self.practice_text.set('That is legal, but it does not meet the puzzle goal. Try again or use Hint.')
-
-    def _practice_hint(self):
-        puzzle = self.puzzles[self.practice_index]
-        self.practice_text.set(puzzle.hints[min(self.practice_hint_level, len(puzzle.hints) - 1)])
-        self.practice_hint_level += 1
-
-    def _next_practice(self):
-        self.practice_index = (self.practice_index + 1) % len(self.puzzles)
-        self._load_practice()
-
     def _review_step(self, delta):
         if self._activity != 'review' or self.review_board is None:
             return
@@ -313,10 +252,25 @@ class StudioFeatures:
                 row = runner.rows[index]
                 loss = row['estimated_loss_cp']
                 estimate = 'unavailable' if loss is None else ('mate risk' if loss > 9000000 else f'{loss / 100:.2f} pawns')
-                text += f"\nPlayed: {row['san']} · Search suggested: {row['suggested']}\nEstimated loss: {estimate}\n{row['note']}\n{row.get('reason', '')}"
+                text += f"\nPlayed: {row['san']} · Search suggested: {row['suggested']}\nEstimated loss: {estimate}\n{row['note']}\n{row.get('reason', '')}\nLine: {' '.join(row.get('continuation', []))}\n{' '.join(row.get('facts', [])[:2])}"
         else:
             text += '\nChoose Analyze game to see possible mistakes and suggested alternatives.'
         self.review_text.set(text)
+
+    def _review_details(self):
+        runner = self.review_runner
+        index = self.review_index - 1
+        if not runner or not 0 <= index < len(runner.rows):
+            self.feedback_var.set('Select an analyzed move before opening review details.')
+            return
+        row = runner.rows[index]
+        text = (f"Played: {row['san']}\nSuggested: {row['suggested']}\n"
+                f"Continuation: {' '.join(row.get('continuation', []))}\n\n"
+                f"Suggested move: {' '.join(row.get('facts', [])) or 'No additional tactical feature identified.'}\n"
+                f"Played move: {' '.join(row.get('played_facts', [])) or 'No additional tactical feature identified.'}\n\n"
+                f"{row['note']} {row.get('uncertainty', '')}\n"
+                f"Search depth {row['depth']}; node budget {runner.nodes}.")
+        self._text_dialog('Review details', text)
 
     def _apply_accessibility(self, event=None, save=True):
         self.text_scale = 1.25 if self.text_size_var.get() == 'Large' else 1.0

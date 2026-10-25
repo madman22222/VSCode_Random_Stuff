@@ -24,6 +24,7 @@ from simple_ai import SimpleAI
 from studio_features import StudioFeatures
 from studio_tools import StudioTools
 from training_controls import TrainingControls
+from practice_controls import PracticeControls
 from game_endings import GameEndings, Conclusion, EndReason, timeout_conclusion
 from app_paths import data_dir, resource_dir, training_command
 from tools.batch_pgn_converter import batch_convert
@@ -75,7 +76,7 @@ class Tooltip:
 HAS_UPGRADES = True
 
 
-class GameController(GameEndings, TrainingControls, StudioTools, StudioFeatures):
+class GameController(PracticeControls, GameEndings, TrainingControls, StudioTools, StudioFeatures):
     """Coordinates the GUI view, AI, and engine manager.
 
     This class owns the game state and provides callbacks for UI events.
@@ -1475,7 +1476,7 @@ class GameController(GameEndings, TrainingControls, StudioTools, StudioFeatures)
                     continue
                 try:
                     im = Image.open(fname).convert('RGBA')
-                    im = im.resize((48, 48), Image.LANCZOS)
+                    im = im.resize((48, 48), Image.Resampling.LANCZOS)
                     imgs[sym] = ImageTk.PhotoImage(im, master=self.master)
                 except Exception:
                     imgs = {}

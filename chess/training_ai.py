@@ -83,16 +83,22 @@ class TrainingAI:
         self._saved_games = 0
         self._position_count = len({key.split('|', 1)[0] for key in self.ai.learning_db})
         self.state_path = self.ai._learning_path + '.training.json'
+        self.journal_path = self.ai._learning_path + '.checkpoint.json'
+        self._recovered_memory = None
         if resume:
             self._load_progress()
             self._saved_games = self.games_played
         self._elapsed_at_start = self._elapsed
 
     def _load_progress(self):
-        if not Path(self.state_path).exists():
-            return
         from data_validation import read_json, training_checkpoint
-        data = training_checkpoint(read_json(self.state_path))
+        if Path(self.journal_path).exists():
+            from training_journal import recoverable
+            data, self._recovered_memory = recoverable(self.ai, self.journal_path)
+        elif Path(self.state_path).exists():
+            data = training_checkpoint(read_json(self.state_path))
+        else:
+            return
         if not isinstance(data, dict) or data.get('version', 1) != 1:
             raise ValueError('Unsupported training checkpoint version')
         results = data['results']
@@ -138,6 +144,15 @@ class TrainingAI:
         return text
 
     def _checkpoint(self):
+        from training_journal import disk_records, fingerprint
+        # Publish the authoritative pair first. A kill between the following two
+        # compatibility writes is recoverable without guessing which counters fit.
+        progress = self.snapshot()
+        progress['saved_games'] = self.games_played
+        atomic_json(self.journal_path, {'version': 1,
+            'memory': {'meta': {'version': self.ai.learning_version}, 'data': self.ai.learning_db},
+            'fingerprint': fingerprint(self.ai.learning_db),
+            'previous_fingerprint': fingerprint(disk_records(self.ai)), 'progress': progress})
         self.ai._save_learning_db()
         previous = self._saved_games
         self._saved_games = self.games_played
@@ -152,6 +167,15 @@ class TrainingAI:
             return
         self.ai.acquire_writer()
         try:
+            if self.resuming:
+                # Revalidate after taking the writer lease: construction is read-only.
+                self._load_progress()
+                if self._recovered_memory is not None:
+                    self.ai.learning_db = self._recovered_memory
+                    self._position_count = len({key.split('|', 1)[0] for key in self.ai.learning_db})
+                    self._saved_games = self.games_played
+                    self.ai._save_learning_db()
+                    atomic_json(self.state_path, self.snapshot())
             if not self.resuming:
                 atomic_json(self.ai._learning_path + '.previous.json', {
                     'meta': {'version': self.ai.learning_version, 'outcome_scoring': self.ai.use_outcome_scoring},
@@ -163,6 +187,7 @@ class TrainingAI:
         self._stop.clear()
         self.last_error = None
         self._session_games = 0
+        self._elapsed_at_start = self._elapsed
         self.ai.depth = self.depth
         self.ai.defer_persistence = True
         # The trainer owns checkpoints so learning and progress save together.
@@ -266,9 +291,10 @@ class BenchmarkRunner:
     Paired games swap colors from the same opening with equal node/depth budgets.
     No learning updates or gameplay files are written during evaluation.
     """
-    def __init__(self, ai, games=4, depth=2, node_limit=500, max_moves=120, seed=2026, opponent='untrained', experimental=False):
+    def __init__(self, ai, games=4, depth=2, node_limit=500, max_moves=120, seed=2026, opponent='untrained', experimental=False, positions=None, suite_meta=None):
         if games < 2 or games % 2:
             raise ValueError('Comparison games must be a positive even number')
+        self.positions = positions
         self.candidate = ai.fork()
         self.candidate.use_learning = True
         if experimental:
@@ -301,6 +327,8 @@ class BenchmarkRunner:
                        'candidate_outcome_scoring': self.candidate.use_outcome_scoring,
                        'ci95_score_percent': [0.0, 100.0], 'completed_pairs': 0,
                        'scoring_recommended': False}
+        self.result.update(evaluation_suite=suite_meta or {'id': 'training-openings'},
+                           memory_fingerprint=memory_fingerprint(ai), games_ledger=[], categories={})
         self._stop = threading.Event()
         self.result_path = ai._learning_path + '.benchmark.json'
 
@@ -324,7 +352,8 @@ class BenchmarkRunner:
         rng = random.Random(self.seed)
         try:
             for pair in range(self.games // 2):
-                initial = starting_board(rng)
+                selected = rng.choice(self.positions) if self.positions else None
+                initial = chess.Board(selected['fen']) if selected else starting_board(rng)
                 pair_points = 0.0
                 for candidate_color in (chess.WHITE, chess.BLACK):
                     board = initial.copy()
@@ -355,6 +384,14 @@ class BenchmarkRunner:
                         pair_points += 1
                     else:
                         self.result['losses'] += 1
+                    category = selected['category'] if selected else 'training'
+                    result = 'draw' if outcome is None or outcome.winner is None else ('win' if outcome.winner == candidate_color else 'loss')
+                    counts = self.result['categories'].setdefault(category, {'win': 0, 'draw': 0, 'loss': 0})
+                    counts[result] += 1
+                    self.result['games_ledger'].append({'pair': pair + 1,
+                        'position': selected['id'] if selected else initial.fen(),
+                        'candidate_color': 'white' if candidate_color else 'black',
+                        'result': result, 'move_limit': outcome is None, 'plies': len(board.move_stack)})
                     self.result['completed'] += 1
                     n = self.result['completed']
                     self.result['score_percent'] = round(100 * (
@@ -405,8 +442,10 @@ class ComparisonSeries:
             opponents.remove('previous')
         if not opponents:
             raise ValueError('Train once to create a previous-version snapshot first.')
+        from evaluation_corpus import load_corpus
+        positions, suite_meta = load_corpus(ai)
         self.runners = [BenchmarkRunner(self.source, games, depth, node_limit, max_moves,
-                                       seed, opponent, experimental) for opponent in opponents]
+                                       seed, opponent, experimental, positions, suite_meta) for opponent in opponents]
         self.current = self.runners[0]
         self.running = False
         self.last_error = None

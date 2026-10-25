@@ -57,3 +57,9 @@ Code synchronization is separate from personal data. Source defaults save in
 fallback). Transfer with Support & study → backup/restore. A common
 `CHESS_STUDIO_DATA_DIR` can deliberately select one profile folder, but do not run
 competing writers simultaneously. Back up data before upgrading or moving it.
+
+The developer ZIP includes the same guided curriculum, multi-move puzzles, review
+continuations, evaluation corpus and checkpoint recovery as the portable build.
+See [guided learning](chess/GUIDED_LEARNING.md). `setup_dev.py` applies the reviewed
+constraints: Pillow 12.3 on Python 3.10, Pillow 13 on Python 3.11+, and the current
+reviewed build tooling. The application uses Pillow's supported Resampling API.

@@ -63,6 +63,14 @@ def run_diagnostics(report_path):
             pump()
             assert app.board.fen() == before
             report['checks']['practice_isolation'] = True
+            from curriculum import course_puzzles, LESSONS, lesson_status
+            from practice_model import PuzzleSession
+            puzzle = next(p for p in course_puzzles() if p.id == 'guided:fork')
+            session = PuzzleSession(puzzle)
+            assert session.attempt(chess.Move.from_uci('c3d5'))['reply'] == 'Kf7'
+            assert session.attempt(chess.Move.from_uci('d5c7'))['completed']
+            assert lesson_status(LESSONS[1], [puzzle.id]) == (1, 2)
+            report['checks']['guided_curriculum_and_auto_reply'] = True
             trainer = TrainingAI(app.ai, depth=1, max_games=1, max_moves=4,
                                  move_time_limit=.005, exploration_rate=0)
             trainer.start()
@@ -73,6 +81,9 @@ def run_diagnostics(report_path):
             assert trainer.last_error is None, str(trainer.last_error)
             assert trainer.games_played == 1
             assert SimpleAI(learning_path=temp / 'memory.json').learning_db == app.ai.learning_db
+            resumed = TrainingAI(SimpleAI(learning_path=temp / 'memory.json'), resume=True)
+            assert resumed.games_played == 1 and resumed._recovered_memory == app.ai.learning_db
+            report['checks']['training_recovery_journal'] = True
             report['checks']['training_and_reload'] = True
             comparison = ComparisonSeries(app.ai, games=2, depth=1, node_limit=20, max_moves=4)
             comparison.start()
@@ -82,6 +93,9 @@ def run_diagnostics(report_path):
                 raise RuntimeError('Comparison check timed out')
             assert comparison.last_error is None, str(comparison.last_error)
             assert len(comparison.reports) == 2
+            assert comparison.reports[0]['evaluation_suite']['position_count'] == 16
+            assert len(comparison.reports[0]['games_ledger']) == 2
+            report['checks']['independent_evaluation_corpus'] = True
             report['checks']['comparison_and_previous_version'] = True
             review = ReviewRunner(app.board, app.ai, depth=1, nodes=100)
             review.start()

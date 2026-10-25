@@ -91,6 +91,12 @@ def configuration(data):
         if name:
             from profile_store import profile_path
             profile_path('.', name)
+    if 'selected_lesson' in data and (not isinstance(data['selected_lesson'], str) or len(data['selected_lesson']) > 80):
+        raise ValueError('Invalid selected lesson')
+    if 'practice_solved' in data:
+        solved = data['practice_solved']
+        if not isinstance(solved, list) or len(solved) > 10000 or any(not isinstance(item, str) or not 1 <= len(item) <= 100 for item in solved):
+            raise ValueError('Invalid practice progress')
     if 'statistics' in data:
         if not isinstance(data['statistics'], dict) or any(type(v) is not int or v < 0
                                                          for v in data['statistics'].values()):

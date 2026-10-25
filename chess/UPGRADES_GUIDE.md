@@ -85,3 +85,14 @@ new contextual keys; scoring approval is reset for legacy files. Expect new data
 to accumulate gradually, rather than an immediate inherited strength improvement.
 Unreadable preferences/memory are left intact and cannot be silently overwritten.
 Use a known-good backup or move damaged files aside before starting fresh.
+
+## Guided-learning and checkpoint update
+
+Keep the whole data folder, including `ai_learn.json.checkpoint.json` (and matching
+files inside named profiles). It couples memory with training progress so Resume
+can repair a process interruption between saves. Older profiles without a journal
+remain readable. If moves were learned or imported after a checkpoint, Resume
+refuses to replace that newer memory; choose Start for a new set of counters.
+Back up before upgrading; journal recovery is not a hardware/power-loss guarantee.
+Lesson progress stays in preferences. Both ZIPs include the same course and
+evaluation resources and must be rebuilt/downloaded together to receive updates.

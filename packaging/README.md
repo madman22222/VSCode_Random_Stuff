@@ -97,3 +97,11 @@ python packaging/smoke_source.py --zip dist/ChessStudio-VSCode.zip --revision (g
 Use a clean committed checkout for release builds. `worktree_dirty` records local
 changes; untracked new modules are not release sources. Setup uses reviewed runtime
 constraints; Python/VS Code are required only for the developer edition.
+
+Pillow 13 requires Python 3.11+. Conditional constraints retain Pillow 12.3 on
+Python 3.10 while the Python 3.11 Windows build uses Pillow 13; setuptools is
+pinned to 84.2.1. Source CI installs these same constraints. Assets include both
+guided-course and evaluation JSON resources; extracted source/frozen diagnostics
+exercise their loading, automatic replies, lesson progress, evaluation ledger,
+and the training recovery journal. Physical monitor scaling and screen-reader
+behavior require separate hands-on checks.
