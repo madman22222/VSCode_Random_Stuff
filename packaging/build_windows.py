@@ -75,16 +75,10 @@ def add_notices(app):
         target = licenses / (path.parent.name + '-license.terms')
         shutil.copy2(path, target)
     (licenses / 'THIRD_PARTY_NOTICES.txt').write_text('\n'.join(notes), encoding='utf-8')
-    files = subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT).decode().split('\0')
+    from build_source import source_files
     with zipfile.ZipFile(sources / 'ChessStudio-source.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
-        for filename in files:
-            path = ROOT / filename
-            if not filename or not path.is_file():
-                continue
-            if (path.suffix in ('.py', '.md', '.txt', '.spec', '.yml', '.yaml', '.bat', '.png')
-                    or path.name in ('.gitignore', '.gitattributes', 'LICENSE')
-                    or path.suffix == '.json' and (filename.startswith('chess/assets/') or filename.startswith('benchmarks/'))):
-                archive.write(path, filename)
+        for filename, path in source_files():
+            archive.write(path, filename)
 
 
 def main():
@@ -107,7 +101,8 @@ def main():
         'Keep this data folder when updating Chess Studio.\n', encoding='utf-8')
     revision = args.version or subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     info = {'application': 'Chess Studio', 'revision': revision, 'platform': 'Windows x64',
-            'python': platform.python_version(), 'packages': {
+            'python': platform.python_version(), 'worktree_dirty': bool(subprocess.check_output(
+                ['git', 'status', '--porcelain'], cwd=ROOT, text=True).strip()), 'packages': {
                 name: importlib.metadata.version(name) for name in ('python-chess', 'chess', 'Pillow', 'pyinstaller', 'altgraph', 'pyinstaller-hooks-contrib', 'pefile', 'pywin32-ctypes', 'packaging', 'setuptools')}}
     (app / 'BUILD_INFO.json').write_text(json.dumps(info, indent=2), encoding='utf-8')
     add_notices(app)

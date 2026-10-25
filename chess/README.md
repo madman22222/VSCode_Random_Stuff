@@ -338,3 +338,20 @@ Custom CLI learning paths remain your responsibility to back up separately.
 For remaining hardware/accessibility checks see [manual verification](MANUAL_VERIFICATION.md).
 Contributors can use [CONTRIBUTING.md](../CONTRIBUTING.md) and the
 [benchmark harness](../benchmarks/README.md).
+
+## Reference material and VS Code
+
+See the [PDF compatibility review](REFERENCE_REVIEW.md) for verified rules, known
+reference simplifications, supported tactics/study inputs and limits. Support &
+study now includes Resign and local draw agreement. Timeouts account for the
+nonflagging side's mating material; PGN results/headers persist. Claimable draws
+are auto-accepted as a casual-play policy, rather than requiring tournament claims.
+
+A second optional original practice pack, `assets/puzzles/reference-themes.json`,
+demonstrates forks, pins, skewers and discovered check. Import it with Support &
+study → Import puzzle pack. It is not a copy of the PDF diagrams or an exhaustive
+course. PDFs themselves cannot be imported as training memory.
+
+[The VS Code edition](../VSCODE_GUIDE.md) runs this same source with F5/Test Explorer
+configuration. Both editions are released from one commit; compiled EXEs need the
+new ZIP to pick up source changes. User profiles do not synchronize automatically.

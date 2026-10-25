@@ -83,3 +83,8 @@ Training has Dashboard / Run settings / Memory subpages. Review offers Quick and
 Deeper budgets. Four extra themed puzzles are available through the bundled
 `assets/puzzles/studio-extras.json` example pack. New version-3 memory retains
 legacy counts but learns contextual records separately.
+
+Support & study also offers Resign and local draw agreement (Two players, after
+both have moved). Declared endings are saved with the PGN result and do not recover
+as unfinished games. See [the reference review](REFERENCE_REVIEW.md) and
+[VS Code guide](../VSCODE_GUIDE.md).

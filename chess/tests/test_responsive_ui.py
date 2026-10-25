@@ -432,3 +432,67 @@ class TestResponsiveUI(unittest.TestCase):
             self.app._practice_click(chess.A7)
             self.app._practice_click(chess.A8)
         self.assertTrue(self.app.practice_done)
+
+    def test_timeout_draw_and_win_are_recorded_once_and_exported(self):
+        self.app.board = chess.Board('7k/8/8/8/8/8/R7/K7 w - - 0 1')
+        before = self.app.config.get('statistics')['games_played']
+        with patch('game_controller.messagebox.showinfo'):
+            self.app.on_clock_timeout(chess.WHITE)
+            self.app.on_clock_timeout(chess.WHITE)
+        self.assertEqual(self.app.current_pgn().headers['Result'], '1/2-1/2')
+        self.assertEqual(self.app.current_pgn().headers['Termination'], 'time forfeit')
+        self.assertEqual(self.app.config.get('statistics')['games_played'], before + 1)
+        self.assertFalse(self.app.session_store.path.exists())
+        self.app.new_game()
+        self.app.board = chess.Board('7k/8/8/8/8/8/R7/K7 w - - 0 1')
+        with patch('game_controller.messagebox.showinfo'):
+            self.app.on_clock_timeout(chess.BLACK)
+        self.assertEqual(self.app.current_pgn().headers['Result'], '1-0')
+        self.assertFalse(self.app.game_started)
+
+    def test_resignation_and_local_draw_share_learning_and_pgn_pipeline(self):
+        self.app.play_mode = 'player_vs_player'
+        for uci in ('e2e4', 'e7e5'):
+            self.app.board.push_uci(uci)
+        with patch('game_endings.messagebox.askyesno', return_value=True):
+            self.app.resign_game()
+        self.assertEqual(self.app.current_pgn().headers['Result'], '0-1')
+        self.app.workspace.select(self.app.review_workspace)
+        self.pump()
+        self.app._analyze_review()
+        self.wait_until(lambda: not self.app.review_runner.running)
+        self.assertEqual(self.app.review_runner.headers['Result'], '0-1')
+        self.app.new_game()
+        for uci in ('e2e4', 'e7e5'):
+            self.app.board.push_uci(uci)
+        with patch('game_endings.messagebox.askyesno', return_value=True):
+            self.app.agree_draw()
+        self.assertEqual(self.app.current_pgn().headers['Result'], '1/2-1/2')
+
+    def test_pgn_keeps_headers_results_and_rejects_partial_parse(self):
+        import io
+        import chess.pgn
+        path = Path(self.tmp.name) / 'course.pgn'
+        path.write_text('[Event "Study"]\n[Result "1-0"]\n\n1. e4 e5 1-0\n')
+        with patch('game_controller.filedialog.askopenfilename', return_value=str(path)):
+            self.app.load_pgn()
+        self.assertEqual(self.app.current_pgn().headers['Event'], 'Study')
+        self.assertEqual(self.app.current_pgn().headers['Result'], '1-0')
+        self.assertEqual(len(self.app.board.move_stack), 2)
+        before = self.app.board.fen()
+        path.write_text('1. e4 e5 2. Ke3 *')
+        with patch('game_controller.filedialog.askopenfilename', return_value=str(path)), \
+             patch('game_controller.messagebox.showerror') as error:
+            self.app.load_pgn()
+        error.assert_called_once()
+        self.assertEqual(self.app.board.fen(), before)
+
+    def test_training_pauses_a_running_clock(self):
+        self.app.clock_enabled = True
+        self.app.clock.start(self.root, True)
+        self.app.training_games_var.set(1)
+        self.app.training_move_time_var.set(1)
+        self.app.start_training_ai()
+        self.app.training_ai.max_moves = 2
+        self.assertFalse(self.app.clock.running)
+        self.wait_until(lambda: not self.app.training_ai.running)

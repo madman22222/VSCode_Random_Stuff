@@ -119,6 +119,14 @@ def run_diagnostics(report_path):
             assert ' ' in position_key(chess.Board())
             report['checks']['profile_restore_and_puzzle_pack'] = True
             report['checks']['support_and_review_export'] = True
+            assert len(load_pack(assets / 'puzzles' / 'reference-themes.json')) == 4
+            from game_endings import timeout_conclusion
+            app.new_game()
+            app.board = chess.Board('7k/8/8/8/8/8/R7/K7 w - - 0 1')
+            assert app._declare_result(timeout_conclusion(app.board, chess.WHITE))
+            assert app.current_pgn().headers['Result'] == '1/2-1/2'
+            assert not app.session_store.path.exists()
+            report['checks']['timeout_draw_and_pgn_result'] = True
             assert not errors, str(errors)
             app.on_close()
             app = root = None

@@ -96,6 +96,12 @@ class StudioFeatures:
     def _save_session(self):
         if not self._features_ready or self.session_store is None or getattr(self, '_tools_busy', False):
             return
+        if getattr(self, '_declared_result', None) is not None:
+            try:
+                self.session_store.clear()
+            except OSError as exc:
+                self.feedback_var.set(f'Could not clear finished-game recovery: {exc}')
+            return
         board = self.board if self._activity == 'game' else self._saved_game['board']
         state = None if self._activity == 'game' else self._saved_game
         clock = {'white': self.clock.white_time, 'black': self.clock.black_time,
@@ -281,6 +287,12 @@ class StudioFeatures:
         self._cancel_review()
         depth, nodes = (3, 12000) if self.review_budget.get() == 'Deeper' else (2, 1500)
         self.review_runner = ReviewRunner(self.review_board, self.ai, depth=depth, nodes=nodes)
+        actual = self._saved_game['board'] if self._saved_game else self.board
+        if (self.review_board.root().fen() == actual.root().fen()
+                and list(self.review_board.move_stack) == list(actual.move_stack)):
+            self.review_runner.headers = dict(getattr(self, '_pgn_headers', {}))
+            outcome = getattr(self, '_declared_result', None) or self.review_board.outcome(claim_draw=True)
+            self.review_runner.headers['Result'] = outcome.result() if outcome else '*'
         self.review_runner.start()
         self._show_review_text()
 

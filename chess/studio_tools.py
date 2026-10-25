@@ -20,6 +20,7 @@ class StudioTools:
         actions = tk.Menu(menu, tearoff=False)
         menu.configure(menu=actions)
         for label, method in (
+                ('Resign game…', self.resign_game), ('Agree local draw…', self.agree_draw),
                 ('Back up data…', self._backup_profile), ('Restore data…', self._restore_profile),
                 ('Select/create training profile…', self._select_profile),
                 ('Comparison history…', self._comparison_history),

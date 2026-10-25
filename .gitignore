@@ -24,3 +24,5 @@ chess/comparison-history/
 chess/puzzle-packs/
 diagnostics.json
 .profile.lock
+
+dev-data/

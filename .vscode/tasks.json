@@ -1,0 +1,8 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {"label": "Chess: create development environment", "type": "process", "command": "python", "windows": {"command": "py"}, "linux": {"command": "python3"}, "osx": {"command": "python3"}, "args": ["tools/setup_dev.py"], "problemMatcher": []},
+    {"label": "Chess: run tests", "type": "process", "command": "${command:python.interpreterPath}", "args": ["run_tests.py"], "options": {"cwd": "${workspaceFolder}"}, "problemMatcher": [], "group": {"kind": "test", "isDefault": true}},
+    {"label": "Chess: tactical regressions", "type": "process", "command": "${command:python.interpreterPath}", "args": ["chess/tactical_suite.py", "--depth", "2", "--nodes", "12000"], "options": {"cwd": "${workspaceFolder}"}, "problemMatcher": []}
+  ]
+}
