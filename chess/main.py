@@ -71,6 +71,7 @@ def run_training(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Chess GUI and headless training")
+    p.add_argument("--diagnostics-report", help="Run bundled startup/gameplay checks and write a JSON report")
     p.add_argument("--against", choices=("both", "untrained", "previous"), default="both", help="Comparison opponents")
     p.add_argument("--experiment", action="store_true", help="Test confidence-weighted root scoring without enabling it")
     p.add_argument("--benchmark", action="store_true", help="Compare saved learning against an untrained engine")
@@ -94,6 +95,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.diagnostics_report:
+        from diagnostics import run_diagnostics
+        return run_diagnostics(args.diagnostics_report)
 
     if args.games < 0 or args.depth < 1 or args.max_plies < 1 or args.move_ms < 1 or args.batch_size < 1:
         parser.error("Depth, move time, batch size and max plies must be positive; games cannot be negative")

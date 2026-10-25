@@ -1,0 +1,70 @@
+name: Windows portable release
+
+on:
+  push:
+    branches: [main]
+    paths: ['chess/**', 'packaging/**', '.github/workflows/windows-portable.yml']
+  pull_request:
+    branches: [main]
+    paths: ['chess/**', 'packaging/**', '.github/workflows/windows-portable.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Install build dependencies
+        run: python -m pip install -r packaging/requirements-build.txt
+      - name: Run source and desktop regressions
+        run: python run_tests.py
+      - name: Build self-contained Windows ZIP
+        run: python packaging/build_windows.py --version "${{ github.sha }}"
+      - name: Test extracted ZIP without Python on PATH
+        run: python packaging/smoke_windows.py --zip dist/ChessStudio-Windows.zip --report portable-smoke-report.json
+      - name: Upload portable download
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChessStudio-Windows-${{ github.sha }}
+          path: |
+            dist/ChessStudio-Windows.zip
+            dist/ChessStudio-Windows.zip.sha256
+            dist/ChessStudio-Windows.build-info.json
+          if-no-files-found: error
+      - name: Upload package diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-diagnostics-${{ github.sha }}
+          path: portable-smoke-report.json
+          if-no-files-found: ignore
+
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ChessStudio-Windows-${{ github.sha }}
+          path: dist
+      - name: Publish ready-to-run ZIP
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="windows-${GITHUB_RUN_NUMBER}-${GITHUB_SHA:0:7}"
+          gh release create "$tag" dist/ChessStudio-Windows.zip dist/ChessStudio-Windows.zip.sha256 dist/ChessStudio-Windows.build-info.json \
+            --target "$GITHUB_SHA" --title "Chess Studio - Windows portable" \
+            --notes-file packaging/release-notes.md --latest

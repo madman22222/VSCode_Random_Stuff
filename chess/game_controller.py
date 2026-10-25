@@ -23,6 +23,8 @@ import chess  # type: ignore - Python-chess library handles all chess rules (leg
 from simple_ai import SimpleAI
 from training_ai import TrainingAI, ComparisonSeries
 from studio_features import StudioFeatures
+from app_paths import data_dir, resource_dir, training_command
+from tools.batch_pgn_converter import batch_convert
 from engine_manager import EngineManager
 from engine_adapter import EngineAdapter
 
@@ -75,13 +77,13 @@ class GameController(StudioFeatures):
     This class owns the game state and provides callbacks for UI events.
     """
 
-    def __init__(self, master: tk.Tk):
+    def __init__(self, master: tk.Tk, config=None):
         self.master = master
         self.ui_font = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
         
         # Initialize config manager first
         if HAS_UPGRADES and ConfigManager:
-            self.config = ConfigManager()
+            self.config = config if config is not None else ConfigManager()
         else:
             self.config = None
         
@@ -93,7 +95,7 @@ class GameController(StudioFeatures):
         self.ai = SimpleAI(depth=ai_depth)
         
         # Initialize engine adapter (wraps EngineManager)
-        self.engine_adapter = EngineAdapter(EngineManager(os.path.dirname(__file__)))
+        self.engine_adapter = EngineAdapter(EngineManager(os.fspath(data_dir())))
         self.engine_enabled = False
         self.engine = None
         self.piece_images = None
@@ -131,7 +133,7 @@ class GameController(StudioFeatures):
         # Initialize sound manager
         if HAS_UPGRADES and SoundManager:
             self.sound = SoundManager(
-                base_path=os.path.dirname(__file__),
+                base_path=os.fspath(resource_dir()),
                 enabled=self.config.get('sound_enabled', True) if self.config else True
             )
         else:
@@ -1343,8 +1345,7 @@ class GameController(StudioFeatures):
             pass
 
     def _training_cli_args(self):
-        import sys
-        args = [sys.executable, os.path.join(os.path.dirname(__file__), 'main.py'), '--training',
+        args = training_command() + ['--training',
                 '--depth', str(int(self.depth_var.get())), '--batch-size', str(int(self.training_batch_size_var.get())),
                 '--move-ms', str(int(self.training_move_time_var.get())),
                 '--games', str(int(self.training_games_var.get())),
@@ -1374,7 +1375,7 @@ class GameController(StudioFeatures):
             messagebox.showinfo('Training', 'Stop and save the current trainer first.')
             return
         try:
-            subprocess.Popen(self._training_cli_args(), cwd=os.path.dirname(__file__),
+            subprocess.Popen(self._training_cli_args(), cwd=os.fspath(data_dir()),
                              creationflags=getattr(subprocess, 'CREATE_NEW_CONSOLE', 0) if os.name == 'nt' else 0)
         except (OSError, ValueError) as exc:
             messagebox.showerror('Training', f'Cannot launch training: {exc}')
@@ -1558,7 +1559,7 @@ class GameController(StudioFeatures):
             pass
 
     def load_piece_images(self):
-        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
+        assets_dir = os.fspath(resource_dir() / 'assets')
         imgs = {}
         try:
             for sym in ['P','N','B','R','Q','K','p','n','b','r','q','k']:
@@ -1858,7 +1859,7 @@ class GameController(StudioFeatures):
             The path to the saved PGN file, or None on failure.
         """
         try:
-            autos_dir = os.path.join(os.path.dirname(__file__), 'autosaves')
+            autos_dir = os.fspath(data_dir() / 'autosaves')
             os.makedirs(autos_dir, exist_ok=True)
             # Build timestamped filename
             ts = time.strftime('%Y%m%d_%H%M%S')
@@ -2017,18 +2018,12 @@ class GameController(StudioFeatures):
                 self.converter_output_dir_var.set(out_dir)
             def worker():
                 try:
-                    self.converter_status_var.set('Running...')
-                    import importlib.util
-                    conv_path = os.path.join(os.path.dirname(__file__), 'tools', 'batch_pgn_converter.py')
-                    spec = importlib.util.spec_from_file_location('batch_pgn_converter', conv_path)
-                    mod = importlib.util.module_from_spec(spec)
-                    assert spec.loader is not None
-                    spec.loader.exec_module(mod)
-                    report = mod.batch_convert(in_dir, out_dir, fmt=fmt, force=False, aggregate_csv=True)
+                    self._post_ui(self.converter_status_var.set, 'Running...')
+                    report = batch_convert(in_dir, out_dir, fmt=fmt, force=False, aggregate_csv=True)
                     summary = f"{report.get('ok',0)} ok, {report.get('skipped',0)} skipped, {report.get('error',0)} errors"
-                    self.converter_status_var.set(f'Done: {summary}')
+                    self._post_ui(self.converter_status_var.set, f'Done: {summary}')
                 except Exception as e:
-                    self.converter_status_var.set(f'Error: {e}')
+                    self._post_ui(self.converter_status_var.set, f'Error: {e}')
             threading.Thread(target=worker, daemon=True).start()
         except Exception:
             pass

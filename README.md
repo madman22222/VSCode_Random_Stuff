@@ -1,3 +1,14 @@
+## Ready-to-run Windows app
+
+Download [ChessStudio-Windows.zip](https://github.com/madman22222/VSCode_Random_Stuff/releases/latest/download/ChessStudio-Windows.zip),
+extract the entire ZIP, then open **ChessStudio.exe** inside the ChessStudio folder.
+No Python, VS Code, installer, or extra downloads are needed (Windows 10/11 x64).
+Keep `_internal` beside the executable and preserve `data/` when upgrading.
+
+The green **Code → Download ZIP** button contains source code, not the portable app.
+Use the [Releases page](https://github.com/madman22222/VSCode_Random_Stuff/releases/latest)
+for the ready-to-run download. See [chess/README.md](chess/README.md) for features.
+
 # VSCode Random Stuff
 
 This repository contains a small Python chess project located in the `chess/` folder.

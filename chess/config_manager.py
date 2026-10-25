@@ -1,6 +1,7 @@
 """Configuration manager for persisting user preferences."""
 import json
 import os
+from app_paths import data_dir
 from typing import Any, Dict
 
 
@@ -8,7 +9,7 @@ class ConfigManager:
     """Handles loading and saving application configuration to JSON file."""
     
     def __init__(self, config_file=None):
-        self.config_file = config_file or os.path.join(os.path.dirname(__file__), 'chess_config.json')
+        self.config_file = config_file or os.fspath(data_dir() / 'chess_config.json')
         self.config: Dict[str, Any] = self._load_config()
     
     def _load_config(self) -> Dict[str, Any]:
