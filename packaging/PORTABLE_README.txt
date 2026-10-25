@@ -38,3 +38,12 @@ Settings includes larger text, high contrast, and keyboard-accessible pieces.
 
 Keyboard: click the board, arrows move focus, Enter/Space selects, Escape clears.
 Use Save to export a PGN. Keep a backup of data/ before updating or resetting.
+
+SUPPORT & STUDY MENU
+Use the header menu for backup/restore, named training profiles, comparison history,
+FEN study, reviewed PGN export, puzzle-pack import, diagnostics, memory limits and
+an optional online release check. Restore previews files, keeps a rollback ZIP and
+closes the app; reopen afterward. Diagnostics exclude logs and game memory by default.
+Training now has Dashboard, Run settings and Memory pages. Version-3 learning keeps
+legacy records but learns contextual position records separately; no strength gain
+is guaranteed. Back up custom CLI files outside data/ separately.

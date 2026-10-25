@@ -3,7 +3,7 @@ Chess Game Controller with AI Learning
 ======================================
 
 This module provides a complete chess GUI application with:
-- Built-in AI with advanced search (PVS, LMR, aspiration windows, killer/history heuristics)
+- Built-in AI with bounded iterative alpha-beta search and ordering heuristics
 - Persistent learning system that improves move ordering based on game outcomes
 - Human-readable learning export and import
 - Support for external engines (Stockfish)
@@ -21,14 +21,16 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Optional
 import chess  # type: ignore - Python-chess library handles all chess rules (legal moves, check, checkmate, castling, en passant, etc.)
 from simple_ai import SimpleAI
-from training_ai import TrainingAI, ComparisonSeries
 from studio_features import StudioFeatures
+from studio_tools import StudioTools
+from training_controls import TrainingControls
 from app_paths import data_dir, resource_dir, training_command
 from tools.batch_pgn_converter import batch_convert
 from engine_manager import EngineManager
 from engine_adapter import EngineAdapter
 
 import os
+from learning_keys import position_key
 import time
 import threading
 import queue
@@ -36,6 +38,7 @@ import copy
 from chess_coach import illegal_move_message, describe_move
 import shutil
 import csv
+from pathlib import Path
 import chess.pgn
 from PIL import Image, ImageTk
 from board_view import BoardView
@@ -71,7 +74,7 @@ class Tooltip:
 HAS_UPGRADES = True
 
 
-class GameController(StudioFeatures):
+class GameController(TrainingControls, StudioTools, StudioFeatures):
     """Coordinates the GUI view, AI, and engine manager.
 
     This class owns the game state and provides callbacks for UI events.
@@ -92,7 +95,16 @@ class GameController(StudioFeatures):
         
         # Get AI depth from config
         ai_depth = self.config.get('ai_depth', 3) if self.config else 3
-        self.ai = SimpleAI(depth=ai_depth)
+        selected = self.config.get('learning_profile', '') if self.config else ''
+        from profile_store import profile_path
+        try:
+            learning = profile_path(Path(self.config.config_file).parent, selected) if selected else None
+        except ValueError:
+            learning = None
+        self.ai = SimpleAI(depth=ai_depth, learning_path=learning)
+        self.ai.transposition_limit = int(self.config.get('transposition_limit', 40000)) if self.config else 40000
+        self.ai.learning_max_entries = int(self.config.get('learning_max_entries', 50000)) if self.config else 50000
+        self.ai.learning_min_keep = int(self.ai.learning_max_entries * .8)
         
         # Initialize engine adapter (wraps EngineManager)
         self.engine_adapter = EngineAdapter(EngineManager(os.fspath(data_dir())))
@@ -325,7 +337,15 @@ class GameController(StudioFeatures):
         except Exception:
             pass
 
-        dashboard = tk.LabelFrame(training_page, text='Training dashboard')
+        training_tabs = ttk.Notebook(training_page)
+        training_tabs.pack(fill='both', expand=True)
+        dashboard_page = tk.Frame(training_tabs)
+        training_settings_page = tk.Frame(training_tabs)
+        learning_page = tk.Frame(training_tabs)
+        for page, title in ((dashboard_page, 'Dashboard'), (training_settings_page, 'Run settings'),
+                            (learning_page, 'Memory')):
+            training_tabs.add(page, text=title)
+        dashboard = tk.LabelFrame(dashboard_page, text='Training dashboard')
         dashboard.pack(fill='x', pady=(0, 8))
         dashboard_actions = tk.Frame(dashboard)
         dashboard_actions.pack(fill='x')
@@ -338,7 +358,7 @@ class GameController(StudioFeatures):
         self.training_progress = ttk.Progressbar(dashboard, mode='determinate', maximum=100)
         self.training_progress.pack(fill='x', pady=(0, 4))
         # Training settings
-        training_frame = tk.LabelFrame(training_page, text='Training Settings', font=('Arial', 9, 'bold'))
+        training_frame = tk.LabelFrame(training_settings_page, text='Training Settings', font=('Arial', 9, 'bold'))
         training_frame.pack(fill='x', pady=2, padx=2)
         self.training_batch_size_var = tk.IntVar(master=self.master, value=(self.config.get('training_batch_size', 100) if self.config else 100))
         self.training_move_time_var = tk.IntVar(master=self.master, value=(self.config.get('training_move_time_ms', 250) if self.config else 250))  # milliseconds per move
@@ -476,7 +496,7 @@ class GameController(StudioFeatures):
                 self.stats_label.pack(padx=2, pady=2)
 
         # Learning panel
-        learn_frame = tk.LabelFrame(training_page, text='Learning', font=('Arial', 9, 'bold'))
+        learn_frame = tk.LabelFrame(learning_page, text='Learning', font=('Arial', 9, 'bold'))
         learn_frame.pack(fill='x', pady=2, padx=2)
         self.learn_use_var = tk.BooleanVar(master=self.master, value=True)
         def toggle_learning():
@@ -575,6 +595,7 @@ class GameController(StudioFeatures):
                  wraplength=380, justify='left').pack(fill='x', pady=12)
         self._load_benchmark_result()
         self._build_studio_features(accessibility_page)
+        self._build_tools_menu(header)
 
         self.load_piece_images()
         self.load_overlay_icons()
@@ -583,11 +604,16 @@ class GameController(StudioFeatures):
         self.apply_theme_to_ui(self.theme_var.get())
         self.update_board()
         self._restore_session()
+        for problem in (getattr(self.ai, 'load_error', None), getattr(self.config, 'load_error', None)):
+            if problem:
+                self.feedback_var.set(problem)
         self.master.after(80, self._poll_ui_queue)
         master.protocol('WM_DELETE_WINDOW', self.on_close)
 
     # ---- UI callbacks and helpers (moved from previous main.py ChessGUI) ----
     def on_click(self, square):
+        if getattr(self, '_tools_busy', False):
+            return
         if self._activity == 'practice':
             return self._practice_click(square)
         if self._activity == 'review':
@@ -782,7 +808,7 @@ class GameController(StudioFeatures):
             self._update_start_pause_button()
             return
         san = self.board.san(move)
-        self.ai._log_choice(self.board.board_fen(), move.uci(), self.board.turn)
+        self.ai._log_choice(position_key(self.board), move.uci(), self.board.turn)
         self.board.push(move)
         self.move_history.append(move)
         if self.config:
@@ -985,6 +1011,8 @@ class GameController(StudioFeatures):
             pass
 
     def new_game(self) -> None:
+        if getattr(self, '_tools_busy', False):
+            return
         """Start a fresh game, clearing the board and state."""
         try:
             self._return_to_game()
@@ -1163,6 +1191,8 @@ class GameController(StudioFeatures):
             self.controls_notebook.select(self.control_pages[1])
 
     def toggle_game_started(self):
+        if getattr(self, '_tools_busy', False):
+            return
         self._return_to_game()
         if self.play_mode == 'training_ai':
             return self.stop_training_ai() if self.game_started else self.start_training_ai()
@@ -1182,114 +1212,6 @@ class GameController(StudioFeatures):
             if self._is_ai_turn():
                 self._launch_ai_thread()
         self._update_start_pause_button()
-
-    def start_training_ai(self, resume=False):
-        if self.training_ai and self.training_ai.running:
-            return
-        if self.benchmark and self.benchmark.running:
-            self.training_dashboard_var.set('Cancel the comparison before training.')
-            return
-        try:
-            games, batch = int(self.training_games_var.get()), int(self.training_batch_size_var.get())
-            milliseconds = int(self.training_move_time_var.get())
-            if games < 0 or batch < 1 or milliseconds < 1:
-                raise ValueError('Games must be zero or more; batch size and move time must be positive.')
-            self._cancel_search()
-            self.game_started = False
-            self._update_start_pause_button()
-            self.controls_notebook.select(self.control_pages[1])
-            # Training has its own search state; it never shares a gameplay log.
-            training_ai = self.ai.fork()
-            self.training_ai = TrainingAI(training_ai, depth=int(self.depth_var.get()),
-                batch_size=batch, move_time_limit=milliseconds / 1000,
-                max_games=games, exploration_rate=float(self.exploration_var.get()),
-                varied_starts=bool(self.varied_starts_var.get()), resume=resume,
-                export_interval=int(self.training_snapshot_interval_var.get()) or None)
-            self._training_synced = False
-            self.training_ai.start()
-            if self.config:
-                self.config.config.update(training_games=games, training_batch_size=batch,
-                    training_move_time_ms=milliseconds,
-                    training_snapshot_batches=int(self.training_snapshot_interval_var.get()))
-                self.config.save_config()
-        except Exception as exc:
-            self.training_dashboard_var.set(f'Cannot start training: {exc}')
-
-    def stop_training_ai(self):
-        if self.training_ai:
-            self.training_ai.request_stop()
-            self.training_dashboard_var.set('Stopping after the current search and saving completed games…')
-
-    def _poll_training_status(self):
-        if self.training_ai is None:
-            return
-        snap = self.training_ai.snapshot()
-        seconds = int(snap['elapsed_seconds'])
-        results = snap['results']
-        self.training_dashboard_var.set(
-            f"{snap['state'].capitalize()} · {snap['games']} completed games\n"
-            f"White wins {results['white']} · Black wins {results['black']} · Draws {results['draw']}\n"
-            f"{seconds // 60}m {seconds % 60}s · {snap['positions']} positions · {snap['learned_moves']} moves remembered\n"
-            f"Current game: {snap['current_moves']} half-moves · Move-limit draws: {snap['move_limit_draws']}"
-            + (f"\nError: {snap['error']}" if snap['error'] else ''))
-        self.training_stats_label.configure(text=f"{snap['session_games']} games this run")
-        limit = self.training_ai.max_games
-        self.training_progress.configure(value=(100 * min(snap['session_games'], limit) / limit if limit else 0))
-        if not self.training_ai.running and not self._training_synced:
-            self.ai.learning_db = copy.deepcopy(self.training_ai.ai.learning_db)
-            self.ai.use_outcome_scoring = self.training_ai.ai.use_outcome_scoring
-            self._training_synced = True
-            self._update_start_pause_button()
-
-    def start_benchmark(self):
-        if self.benchmark and self.benchmark.running:
-            return
-        if self.training_ai and self.training_ai.running:
-            self.benchmark_var.set('Stop and save training before starting a comparison.')
-            return
-        try:
-            games, nodes = int(self.benchmark_games_var.get()), int(self.benchmark_nodes_var.get())
-            if not 2 <= games <= 1000 or games % 2 or not 10 <= nodes <= 100000:
-                raise ValueError('Use 2–1000 games (even) and 10–100000 nodes per move.')
-            self.benchmark = ComparisonSeries(self.ai, games=games, node_limit=nodes,
-                                              experimental=bool(self.experimental_scoring_var.get()))
-            self.benchmark.start()
-        except Exception as exc:
-            self.benchmark_var.set(f'Cannot compare: {exc}')
-
-    def stop_benchmark(self):
-        if self.benchmark:
-            self.benchmark.request_stop()
-
-    def _show_benchmark(self, result):
-        reports = list(result.get('reports') or [])
-        if not reports or reports[-1].get('opponent') != result.get('opponent'):
-            reports.append(result)
-        text = [f"Comparison {result.get('state', 'idle')}."]
-        for report in reports:
-            interval = report.get('ci95_score_percent', [0, 100])
-            text.append(f"{report.get('opponent', 'untrained').capitalize()}: {report['completed']}/{report['requested']} games; "
-                        f"W{report['wins']} L{report['losses']} D{report['draws']}\n"
-                        f"Score {report.get('score_percent') if report.get('score_percent') is not None else '—'}%; conservative 95% range {interval[0]}–{interval[1]}%\n"
-                        f"Move-limit draws {report['move_limit_draws']}")
-        if result.get('state') == 'running':
-            text.append('Comparison running…')
-        if result.get('missing_previous'):
-            text.append('Previous snapshot unavailable. Train once to create one.')
-        if result.get('experiment'):
-            text.append('Scoring evidence: ' + ('supports enabling' if result.get('scoring_recommended') else 'not sufficient; scoring stays off'))
-        if result.get('error'):
-            text.append(result['error'])
-        self.benchmark_var.set('\n'.join(text))
-
-    def _load_benchmark_result(self):
-        import json
-        path = self.ai._learning_path + '.benchmark.json'
-        try:
-            with open(path, encoding='utf-8') as stream:
-                self._show_benchmark(json.load(stream))
-        except (OSError, ValueError, KeyError):
-            pass
 
     def _update_start_pause_button(self) -> None:
         """Update the Start/Pause button appearance based on game state."""
@@ -1439,62 +1361,36 @@ class GameController(StudioFeatures):
             messagebox.showerror('Learning', f'Failed to export: {e}')
 
     def import_learning(self) -> None:
-        if self.training_ai and self.training_ai.running:
-            messagebox.showinfo('Training', 'Stop and save training before importing learning.')
+        if not self._tools_idle():
             return
-        """Import learning data from a JSON file; accepts raw or readable format and merges counts."""
         try:
-            if not hasattr(self, 'ai') or not self.ai:
-                return
-            path = filedialog.askopenfilename(filetypes=[('JSON files', '*.json')])
+            from data_validation import read_json, learning_records
+            path = filedialog.askopenfilename(filetypes=[('Learning JSON', '*.json *.json.gz')])
             if not path:
                 return
-            import json
-            with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            merged = 0
-            # Detect readable format
-            if isinstance(data, dict) and 'positions' in data:
-                positions = data.get('positions', {})
-                for fen_key, entry in positions.items():
-                    moves = entry.get('moves', {})
-                    for uci, rec in moves.items():
-                        key = f"{fen_key}|{uci}"
-                        dest = self.ai.learning_db.get(key, {"w": 0, "l": 0, "d": 0})
-                        dest['w'] = int(dest.get('w', 0)) + int(rec.get('wins', 0))
-                        dest['l'] = int(dest.get('l', 0)) + int(rec.get('losses', 0))
-                        dest['d'] = int(dest.get('d', 0)) + int(rec.get('draws', 0))
-                        self.ai.learning_db[key] = dest
-                        merged += 1
-            elif isinstance(data, dict):
-                # Raw format: key -> {w,l,d}
-                for key, rec in data.items():
-                    if not isinstance(rec, dict):
-                        continue
-                    dest = self.ai.learning_db.get(key, {"w": 0, "l": 0, "d": 0})
-                    dest['w'] = int(dest.get('w', 0)) + int(rec.get('w', 0))
-                    dest['l'] = int(dest.get('l', 0)) + int(rec.get('l', 0))
-                    dest['d'] = int(dest.get('d', 0)) + int(rec.get('d', 0))
-                    self.ai.learning_db[key] = dest
-                    merged += 1
-            else:
-                messagebox.showerror('Learning', 'Unsupported file format.')
-                return
-            # Persist and regenerate readable file
-            self.ai._save_learning_db()
+            records = learning_records(read_json(path))
+            candidate = copy.deepcopy(self.ai.learning_db)
+            for key, counts in records.items():
+                old = candidate.setdefault(key, {'w': 0, 'l': 0, 'd': 0})
+                for name in ('w', 'l', 'd'):
+                    old[name] += counts[name]
+            learning_records(candidate)  # Validate merged limits too.
+            old, scoring = self.ai.learning_db, self.ai.use_outcome_scoring
+            self.ai.learning_db, self.ai.use_outcome_scoring = candidate, False
             try:
-                self.ai.export_readable_learning()
+                self.ai._save_learning_db()
             except Exception:
-                pass
-            messagebox.showinfo('Learning', f'Merged {merged} entries into learning database.')
-        except Exception as e:
-            messagebox.showerror('Learning', f'Failed to import: {e}')
+                self.ai.learning_db, self.ai.use_outcome_scoring = old, scoring
+                raise
+            messagebox.showinfo('Learning', f'Merged {len(records)} entries. Outcome scoring reset to off.')
+        except Exception as exc:
+            self._tool_error('Import failed', exc)
 
     def show_learning_for_position(self) -> None:
         try:
             if not hasattr(self, 'ai') or not self.ai:
                 return
-            fen_key = self.board.fen().split(' ')[0]
+            fen_key = position_key(self.board)
             # Collect moves
             rows = []
             for mv in self.board.legal_moves:
@@ -1635,6 +1531,8 @@ class GameController(StudioFeatures):
                 self.engine_toggle.configure(text='Use Engine: Off')
 
     def on_close(self):
+        if getattr(self, '_tools_busy', False):
+            return
         self._save_session()
         self._cancel_review()
         self._closed = True
@@ -1794,6 +1692,7 @@ class GameController(StudioFeatures):
         replay = self.board.root()
         for move in self.board.move_stack:
             valid.add((replay.board_fen(), move.uci(), replay.turn))
+            valid.add((position_key(replay), move.uci(), replay.turn))
             replay.push(move)
         self.ai.game_log = [item for item in self.ai.game_log if item in valid]
         self.move_history = list(self.board.move_stack)

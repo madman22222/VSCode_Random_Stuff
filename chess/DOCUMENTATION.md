@@ -113,3 +113,24 @@ packaged imports or resources, rerun the extracted-bundle smoke test.
 
 Third-party notices and source archives travel in portable `LICENSES/` and
 `SOURCE/`. Inspect those files for the exact versions and license texts shipped.
+
+## Backlog implementation additions
+
+`training_controls.py` separates dashboard/comparison callbacks from game controls.
+`studio_tools.py` owns support/profile/study dialogs and blocks conflicting UI work
+with a modal maintenance task while workers return results through `_post_ui`.
+`profile_store.py` provides bounded, checksummed archives, writer leases, restore
+validation and rollback; runtime inputs are checked by `data_validation.py`.
+`support_tools.py` provides metadata-only reports and explicit release lookup.
+`puzzle_packs.py` validates attributed JSON packs; `learning_keys.py` defines the
+version-3 state key and deliberate retention of unmappable legacy records.
+
+Comparison series append immutable timestamped reports per profile. Search tables
+use bounded FIFO replacement; learning pruning remains a soft cap with a cooldown.
+Training snapshots distinguish elapsed/session time, checkpointed totals and recent
+results. Logs rotate locally and support exports omit logs/games by default.
+
+Benchmark commands and raw A/B/smoke reports are in `benchmarks/`. The retained
+reference evaluation permits repeatable comparisons. The small migration smoke
+uses cutoff-heavy games and cannot establish playing-strength improvement.
+See [manual verification](MANUAL_VERIFICATION.md) for real DPI/screen-reader work.

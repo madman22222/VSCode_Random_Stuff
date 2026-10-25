@@ -1,0 +1,82 @@
+{
+  "legacy_record_preserved": true,
+  "scoring_reset": true,
+  "legacy_input_bytes": 138,
+  "saved_compressed_bytes": 633,
+  "new_contextual_entries": 43,
+  "comparison": {
+    "wins": 0,
+    "losses": 0,
+    "draws": 4,
+    "move_limit_draws": 2,
+    "completed": 4,
+    "requested": 4,
+    "seed": 2026,
+    "depth": 1,
+    "nodes_per_move": 40,
+    "max_plies": 12,
+    "memory_entries": 44,
+    "score_percent": 50.0,
+    "state": "completed",
+    "opponent": "previous",
+    "candidate_outcome_scoring": false,
+    "ci95_score_percent": [
+      0,
+      100
+    ],
+    "completed_pairs": 2,
+    "scoring_recommended": false,
+    "reports": [
+      {
+        "wins": 0,
+        "losses": 0,
+        "draws": 4,
+        "move_limit_draws": 2,
+        "completed": 4,
+        "requested": 4,
+        "seed": 2026,
+        "depth": 1,
+        "nodes_per_move": 40,
+        "max_plies": 12,
+        "memory_entries": 44,
+        "score_percent": 50.0,
+        "state": "completed",
+        "opponent": "untrained",
+        "candidate_outcome_scoring": false,
+        "ci95_score_percent": [
+          0,
+          100
+        ],
+        "completed_pairs": 2,
+        "scoring_recommended": false
+      },
+      {
+        "wins": 0,
+        "losses": 0,
+        "draws": 4,
+        "move_limit_draws": 2,
+        "completed": 4,
+        "requested": 4,
+        "seed": 2026,
+        "depth": 1,
+        "nodes_per_move": 40,
+        "max_plies": 12,
+        "memory_entries": 44,
+        "score_percent": 50.0,
+        "state": "completed",
+        "opponent": "previous",
+        "candidate_outcome_scoring": false,
+        "ci95_score_percent": [
+          0,
+          100
+        ],
+        "completed_pairs": 2,
+        "scoring_recommended": false
+      }
+    ],
+    "missing_previous": false,
+    "memory_fingerprint": "b4feb2735132e6ac5cb5b187c8177bbda14a0996c67718a303c67c776ae406ba",
+    "experiment": false
+  },
+  "limitation": "Tiny cutoff-heavy smoke check, not evidence of greater chess strength or comparable file compression ratios."
+}

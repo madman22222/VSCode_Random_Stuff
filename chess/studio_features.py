@@ -12,6 +12,18 @@ from training_ai import memory_fingerprint
 
 class StudioFeatures:
     def _init_studio_state(self):
+        self.puzzles = list(PUZZLES)
+        if self.config:
+            from puzzle_packs import load_pack
+            from logger import warn
+            for pack in sorted(Path(self.config.config_file).parent.glob('puzzle-packs/*.json')):
+                try:
+                    extra = load_pack(pack)
+                    if {p.id for p in extra} & {p.id for p in self.puzzles}:
+                        raise ValueError('Duplicate puzzle IDs')
+                    self.puzzles.extend(extra)
+                except (OSError, ValueError, KeyError, TypeError) as exc:
+                    warn(f'Puzzle pack not loaded: {pack.name}: {exc}')
         self._activity = 'game'
         self._saved_game = None
         self._features_ready = False
@@ -32,8 +44,9 @@ class StudioFeatures:
         self.workspace.bind('<<NotebookTabChanged>>', self._workspace_changed)
         self.practice_choice = tk.StringVar(master=self.master, value=PUZZLES[0].title)
         picker = ttk.Combobox(self.practice_workspace, textvariable=self.practice_choice,
-                             values=[p.title for p in PUZZLES], state='readonly')
+                             values=[p.title for p in self.puzzles], state='readonly')
         picker.pack(fill='x', pady=5)
+        self.practice_picker = picker
         picker.bind('<<ComboboxSelected>>', self._pick_practice)
         row = tk.Frame(self.practice_workspace)
         row.pack(fill='x')
@@ -53,6 +66,9 @@ class StudioFeatures:
         row.pack(fill='x', pady=4)
         tk.Button(row, text='Analyze game', command=self._analyze_review).pack(side='left')
         tk.Button(row, text='Cancel', command=self._cancel_review).pack(side='right')
+        self.review_budget = tk.StringVar(master=self.master, value='Quick')
+        ttk.Combobox(self.review_workspace, textvariable=self.review_budget, values=('Quick', 'Deeper'),
+                     state='readonly').pack(fill='x')
         self.review_text = tk.StringVar(master=self.master, value='Step through the current or finished game. Left/Right also navigate.')
         tk.Label(self.review_workspace, textvariable=self.review_text, wraplength=365,
                  justify='left').pack(fill='x', pady=6)
@@ -183,13 +199,13 @@ class StudioFeatures:
             self._return_to_game()
 
     def _pick_practice(self, event=None):
-        self.practice_index = next(i for i, p in enumerate(PUZZLES) if p.title == self.practice_choice.get())
+        self.practice_index = next(i for i, p in enumerate(self.puzzles) if p.title == self.practice_choice.get())
         self._load_practice()
 
     def _load_practice(self):
         if self._activity != 'practice':
             return
-        puzzle = PUZZLES[self.practice_index]
+        puzzle = self.puzzles[self.practice_index]
         self.practice_choice.set(puzzle.title)
         self.board = chess.Board(puzzle.fen)
         self.practice_done = False
@@ -201,7 +217,7 @@ class StudioFeatures:
         self.update_board(force=True)
         solved = self.config.get('practice_solved', []) if self.config else []
         side = 'White' if self.board.turn else 'Black'
-        self.practice_text.set(f'{puzzle.title}: {side} to move.\n{len(solved)}/{len(PUZZLES)} puzzles solved.')
+        self.practice_text.set(f'{puzzle.title}: {side} to move.\n{len(set(solved) & {p.id for p in self.puzzles})}/{len(self.puzzles)} puzzles solved.')
         self.feedback_var.set('Practice mode: your game and clocks are paused.')
 
     def _practice_click(self, square):
@@ -216,8 +232,12 @@ class StudioFeatures:
             return
         mover = self.board.piece_at(self.selected)
         promotion = chess.QUEEN if mover and mover.piece_type == chess.PAWN and chess.square_rank(square) in (0, 7) else None
+        if promotion is not None and getattr(self.puzzles[self.practice_index], 'goal', '') == 'solution':
+            promotion = self.ask_promotion(self.board.turn)
+            if promotion is None:
+                return
         move = chess.Move(self.selected, square, promotion=promotion)
-        puzzle = PUZZLES[self.practice_index]
+        puzzle = self.puzzles[self.practice_index]
         if move not in self.board.legal_moves:
             from chess_coach import illegal_move_message
             self.practice_text.set(illegal_move_message(self.board, move))
@@ -229,19 +249,19 @@ class StudioFeatures:
                 solved.append(puzzle.id)
                 if self.config:
                     self.config.set('practice_solved', solved)
-            self.practice_text.set(f'Correct! {len(solved)}/{len(PUZZLES)} solved. Choose Next for another puzzle.')
+            self.practice_text.set(f'Correct! {len(set(solved) & {p.id for p in self.puzzles})}/{len(self.puzzles)} solved. Choose Next for another puzzle.')
             self.selected = None
             self.update_board(force=True)
         else:
             self.practice_text.set('That is legal, but it does not meet the puzzle goal. Try again or use Hint.')
 
     def _practice_hint(self):
-        puzzle = PUZZLES[self.practice_index]
+        puzzle = self.puzzles[self.practice_index]
         self.practice_text.set(puzzle.hints[min(self.practice_hint_level, len(puzzle.hints) - 1)])
         self.practice_hint_level += 1
 
     def _next_practice(self):
-        self.practice_index = (self.practice_index + 1) % len(PUZZLES)
+        self.practice_index = (self.practice_index + 1) % len(self.puzzles)
         self._load_practice()
 
     def _review_step(self, delta):
@@ -259,7 +279,8 @@ class StudioFeatures:
         if self._activity != 'review':
             return
         self._cancel_review()
-        self.review_runner = ReviewRunner(self.review_board, self.ai)
+        depth, nodes = (3, 12000) if self.review_budget.get() == 'Deeper' else (2, 1500)
+        self.review_runner = ReviewRunner(self.review_board, self.ai, depth=depth, nodes=nodes)
         self.review_runner.start()
         self._show_review_text()
 
@@ -312,7 +333,11 @@ class StudioFeatures:
                 dx, dy = -dx, -dy
             file, rank = chess.square_file(square) + dx, chess.square_rank(square) + dy
             if 0 <= file < 8 and 0 <= rank < 8:
-                self.board_view.focus(chess.square(file, rank))
+                target = chess.square(file, rank)
+                self.board_view.focus(target)
+                piece = self.board.piece_at(target)
+                description = ('White ' if piece.color else 'Black ') + chess.piece_name(piece.piece_type) if piece else 'empty'
+                self.feedback_var.set(f'Board focus: {chess.square_name(target)}, {description}. Enter or Space selects.')
             return 'break'
         if key in ('Return', 'space'):
             self.on_click(square)

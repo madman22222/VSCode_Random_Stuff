@@ -279,3 +279,62 @@ memory database for that command; use it again on later commands for that profil
 Relative custom paths resolve against the command's working directory.
 `CHESS_STUDIO_DATA_DIR` overrides the default writable folder for a process.
 Close other writers and back up data before moving or replacing a profile.
+
+## Support, backups, and study tools
+
+The header's **Support & study** menu provides:
+
+- **Back up data / Restore data**: checksum-verified ZIP archives of GUI profiles,
+  preferences, unfinished sessions, autosaves, puzzle packs and comparison history.
+  Restore previews the files and keeps a `backups/before-restore-*.zip` rollback
+  archive. Close other app instances and stop background tasks first. Restore
+  closes the app after success; reopen it to load the restored state. Logs,
+  executables and arbitrary CLI memory files outside this data folder are excluded.
+- **Select/create training profile**: a separate `profiles/NAME/ai_learn.json`
+  database and companion files. Switching starts a new paused game and does not
+  transfer the old game's learning log. Save a PGN before switching if needed.
+- **Comparison history**: view/export or explicitly delete an individual historical
+  report. Deletion leaves memory and the latest comparison file intact.
+- **Memory limits**: configure a bounded FIFO search table and move-memory soft cap.
+  Reducing learning limits can discard records after completed games; back up first.
+- **Study a FEN / Copy FEN**: validate a position and analyze it in the isolated
+  Review workspace. Returning to Game restores the real board and recovery slot.
+- **Export reviewed PGN**: save shallow review annotations, preserving the starting
+  position. Quick and Deeper review budgets are selectable; neither is definitive.
+- **Import puzzle pack**: load a validated, attributed local JSON pack. Packs and
+  solved IDs persist; different packs use separate IDs. An example with four extra
+  themed puzzles is in `assets/puzzles/studio-extras.json` (portable:
+  `_internal/assets/puzzles/studio-extras.json`). The pack format requires version,
+  ID, author, puzzles with valid FENs, hints and legal UCI solutions; see that example.
+- **About / export diagnostics**: show revision, runtime, active paths and memory
+  counts. The export excludes logs, games and move memory; review paths before sharing.
+  Local logs rotate in `logs/application.log` (three retained backups).
+- **Check for updates**: explicitly opt in to one GitHub request and compare the
+  published revision. Offline use works normally. No executable is downloaded,
+  replaced, or installed automatically. Back up data before changing ZIP versions.
+
+Training now has **Dashboard**, **Run settings**, and **Memory** subpages. Its
+summary separates games completed from checkpointed totals, shows recent outcomes
+and games/minute, and estimates remaining time only for bounded runs with enough
+completed games. The estimate can vary substantially with game length/hardware.
+
+### Learning-format migration
+
+New memory uses **version 3** position keys with piece placement, side to move,
+castling rights and legal en-passant rights. Versions 1/2 and readable exports are
+accepted after bounded validation. Legacy placement-only counts are retained for
+backup/export but do not bias new contextual positions: missing state cannot be
+reconstructed reliably. New games accumulate contextual records alongside them.
+Legacy scoring approval is reset; experimental scoring needs fresh evidence.
+Keys still omit repetition history and draw counters, so this is not a complete
+representation of all chess history. More data does not establish stronger play.
+
+Invalid or future-format preferences/memory are preserved and normal saves refuse
+to overwrite them. Restore a known-good backup or move the damaged file aside
+before starting a fresh profile. JSON inputs have a 32 MiB decompressed limit;
+backups allow at most 2,000 runtime files and 128 MiB uncompressed archive contents.
+Custom CLI learning paths remain your responsibility to back up separately.
+
+For remaining hardware/accessibility checks see [manual verification](MANUAL_VERIFICATION.md).
+Contributors can use [CONTRIBUTING.md](../CONTRIBUTING.md) and the
+[benchmark harness](../benchmarks/README.md).

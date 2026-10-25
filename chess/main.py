@@ -62,6 +62,7 @@ def run_training(args) -> int:
         pass
     finally:
         trainer.stop()
+    print(f"Training stopped: {trainer.games_played} games; {trainer.results}")
     if trainer.last_error:
         print(f"Training failed: {trainer.last_error}", file=sys.stderr)
         return 1

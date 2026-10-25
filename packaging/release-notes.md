@@ -14,3 +14,11 @@ application with Python removed from the child process PATH before publishing.
 
 Full user guide: https://github.com/madman22222/VSCode_Random_Stuff/blob/main/chess/README.md
 Upgrade and troubleshooting: https://github.com/madman22222/VSCode_Random_Stuff/blob/main/chess/UPGRADES_GUIDE.md
+
+New support/study tools include profile backup and restore with rollback, named
+training profiles, comparison history, FEN study, annotated review export, validated
+puzzle packs, diagnostics and an explicit update check. Training progress separates
+completed and checkpointed games. Learning version 3 adds contextual position keys
+while preserving legacy records. Search/memory limits and measured evaluation tuning
+are included; no chess-strength improvement is claimed. See the bundled README
+before restoring data or upgrading.

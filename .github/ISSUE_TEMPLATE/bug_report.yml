@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible Chess Studio problem
+title: "[Bug] "
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest sequence that shows the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Platform and build
+      description: Windows/macOS/Linux, display scaling, portable/source, and revision from Support & study → About.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Error text or optional diagnostics
+      description: Review diagnostics before sharing. Do not upload private training profiles or games unless you choose to.

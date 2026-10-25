@@ -70,3 +70,18 @@ Developers can run `python run_tests.py` and
 root. Diagnostics require a desktop display and use an isolated temporary
 profile. Portable users can run `.\ChessStudio-CLI.exe --diagnostics-report diagnostics.json`.
 See [technical documentation](DOCUMENTATION.md) for validation details.
+
+## In-app backup and format migration
+
+Use **Support & study → Back up data** before upgrading. **Restore data** validates
+archive checksums, supported paths, sizes and runtime input formats, previews the
+file list, and keeps a rollback copy under `backups/`. Restore requires idle tasks
+and closes the app after success to prevent stale in-memory saves. It does not
+include logs or arbitrary CLI profiles outside the GUI data folder.
+
+Version-3 learning preserves older placement-only records without inventing turn,
+castling or en-passant state. Older records remain exportable but new searches use
+new contextual keys; scoring approval is reset for legacy files. Expect new data
+to accumulate gradually, rather than an immediate inherited strength improvement.
+Unreadable preferences/memory are left intact and cannot be silently overwritten.
+Use a known-good backup or move damaged files aside before starting fresh.

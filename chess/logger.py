@@ -1,31 +1,44 @@
-"""Minimal logging helper for the chess application.
+"""Rotating local application log; no gameplay databases are logged."""
+import logging
+from logging.handlers import RotatingFileHandler
+from app_paths import data_dir
 
-Provides thin wrappers so we can later swap out print-based logging for
-structured logging without changing call sites.
-"""
-from __future__ import annotations
-import sys, time
+_log = logging.getLogger('chess_studio')
+_log.setLevel(logging.INFO)
+_log.propagate = False
 
-LEVELS = {"info": "INFO", "warn": "WARN", "error": "ERROR", "debug": "DEBUG"}
-_enabled_debug = False
 
-def set_debug(enabled: bool) -> None:
-    global _enabled_debug
-    _enabled_debug = bool(enabled)
-
-def _log(level: str, msg: str) -> None:
-    if level == 'debug' and not _enabled_debug:
-        return
+def setup_logging():
+    if _log.handlers:
+        return _log
     try:
-        ts = time.strftime('%H:%M:%S')
-        print(f"[{ts} {LEVELS.get(level, level.upper())}] {msg}")
-    except Exception:
-        try:
-            print(msg)
-        except Exception:
-            pass
+        folder = data_dir() / 'logs'
+        folder.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(folder / 'application.log', maxBytes=512 * 1024,
+                                      backupCount=3, encoding='utf-8')
+        handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+        _log.addHandler(handler)
+    except OSError:
+        _log.addHandler(logging.NullHandler())
+    return _log
 
-def info(msg: str) -> None: _log('info', msg)
-def warn(msg: str) -> None: _log('warn', msg)
-def error(msg: str) -> None: _log('error', msg)
-def debug(msg: str) -> None: _log('debug', msg)
+
+def set_debug(enabled):
+    _log.setLevel(logging.DEBUG if enabled else logging.INFO)
+
+
+def info(msg):
+    setup_logging().info(msg)
+
+
+def warn(msg):
+    setup_logging().warning(msg)
+
+
+def error(msg):
+    setup_logging().error(msg)
+
+
+def debug(msg):
+    if _log.isEnabledFor(logging.DEBUG):
+        setup_logging().debug(msg)

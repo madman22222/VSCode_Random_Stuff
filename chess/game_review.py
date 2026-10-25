@@ -49,11 +49,14 @@ class ReviewRunner:
                 board.push(move)
                 after_move, after_score, after_depth = self._evaluate(board)
                 loss = None
-                if before_score is not None and after_score is not None:
+                if (before_score is not None and after_score is not None
+                        and abs(before_score) < 9000000 and abs(after_score) < 9000000):
                     loss = max(0, (before_score - after_score) * (1 if turn else -1))
                     if move == before_move:
                         loss = 0
                 note = 'Shallow search suggestion; not a definitive verdict.'
+                if any(score is not None and abs(score) >= 9000000 for score in (before_score, after_score)):
+                    note = 'Mate-related score: no precise pawn-loss estimate is available.'
                 if loss is not None and loss >= 150 and before_depth and (after_depth or board.is_game_over()):
                     note = 'Possible mistake: this search preferred a different move.'
                 self.rows.append({'move': move.uci(), 'san': san, 'suggested': suggested,
@@ -64,3 +67,17 @@ class ReviewRunner:
             self.last_error = str(exc)
         finally:
             self.running = False
+
+
+def annotated_pgn(runner):
+    """Export a separate PGN; preserve start position and never change source board."""
+    import chess.pgn
+    game = chess.pgn.Game.from_board(runner.board)
+    node = game
+    for row in runner.rows:
+        if not node.variations:
+            break
+        node = node.variations[0]
+        node.comment = (f"Shallow estimate: suggested {row['suggested']}. {row['note']} "
+                        f"Search depth {row['depth']}; node budget {runner.nodes}.")
+    return str(game) + '\n'

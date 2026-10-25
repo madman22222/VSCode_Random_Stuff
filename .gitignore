@@ -16,3 +16,11 @@ last_session.invalid-*.json
 build/
 dist/
 portable-smoke-report.json
+
+chess/logs/
+chess/profiles/
+chess/backups/
+chess/comparison-history/
+chess/puzzle-packs/
+diagnostics.json
+.profile.lock

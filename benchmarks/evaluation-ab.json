@@ -1,0 +1,179 @@
+{
+  "description": "Single-machine evaluation-only A/B, identical engine except two evaluation methods. No tracing/profiling in timer.",
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "python": "3.12.14",
+  "seed": 2026,
+  "node_limit": 1000,
+  "depth": 3,
+  "evaluation_equivalence_positions": 100,
+  "results": [
+    {
+      "id": "initial",
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "before": {
+        "median_seconds": 0.21291383100015082,
+        "samples_seconds": [
+          0.20952164299978904,
+          0.2176262879997921,
+          0.21444613899984688,
+          0.20346042600021974,
+          0.21291383100015082
+        ],
+        "metrics": {
+          "move": "e2e4",
+          "depth": 2,
+          "nodes": 1000,
+          "branching": 20,
+          "time": 0.2128685829998176,
+          "source": "iterative",
+          "score_cp": 0
+        }
+      },
+      "after": {
+        "median_seconds": 0.2019976339997811,
+        "samples_seconds": [
+          0.2019976339997811,
+          0.19978269900002488,
+          0.20281324100005804,
+          0.19467994900014673,
+          0.20984953299966946
+        ],
+        "metrics": {
+          "move": "e2e4",
+          "depth": 2,
+          "nodes": 1000,
+          "branching": 20,
+          "time": 0.20980250200000228,
+          "source": "iterative",
+          "score_cp": 0
+        }
+      }
+    },
+    {
+      "id": "open-center",
+      "fen": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
+      "before": {
+        "median_seconds": 0.21577809600012188,
+        "samples_seconds": [
+          0.21844303699981538,
+          0.20880122800008394,
+          0.22067036199996437,
+          0.21577809600012188,
+          0.2156931189997522
+        ],
+        "metrics": {
+          "move": "d2d4",
+          "depth": 2,
+          "nodes": 1000,
+          "branching": 27,
+          "time": 0.21557868700028848,
+          "source": "iterative",
+          "score_cp": 8
+        }
+      },
+      "after": {
+        "median_seconds": 0.20432501999994201,
+        "samples_seconds": [
+          0.20432501999994201,
+          0.20455564700023388,
+          0.20344376299999567,
+          0.2035525870001038,
+          0.21907210700010182
+        ],
+        "metrics": {
+          "move": "d2d4",
+          "depth": 2,
+          "nodes": 1000,
+          "branching": 27,
+          "time": 0.21895684299988716,
+          "source": "iterative",
+          "score_cp": 8
+        }
+      }
+    },
+    {
+      "id": "queen-mate",
+      "fen": "7k/8/5KQ1/8/8/8/8/8 w - - 0 1",
+      "before": {
+        "median_seconds": 0.0591622480001206,
+        "samples_seconds": [
+          0.056461301000126696,
+          0.05711556699998255,
+          0.06674186300006113,
+          0.06426160599994546,
+          0.0591622480001206
+        ],
+        "metrics": {
+          "move": "g6g7",
+          "depth": 3,
+          "nodes": 942,
+          "branching": 23,
+          "time": 0.05909059999976307,
+          "source": "iterative",
+          "score_cp": 9999999
+        }
+      },
+      "after": {
+        "median_seconds": 0.056759580000289134,
+        "samples_seconds": [
+          0.056213477999790484,
+          0.06191563499987751,
+          0.06533136899997771,
+          0.05496480900001188,
+          0.056759580000289134
+        ],
+        "metrics": {
+          "move": "g6g7",
+          "depth": 3,
+          "nodes": 942,
+          "branching": 23,
+          "time": 0.0566938410001967,
+          "source": "iterative",
+          "score_cp": 9999999
+        }
+      }
+    },
+    {
+      "id": "pawn-race",
+      "fen": "7k/8/8/8/8/8/P7/K7 w - - 0 1",
+      "before": {
+        "median_seconds": 0.005820434000270325,
+        "samples_seconds": [
+          0.005809887999930652,
+          0.005924071000208642,
+          0.006515251000109856,
+          0.005724640000153158,
+          0.005820434000270325
+        ],
+        "metrics": {
+          "move": "a1b2",
+          "depth": 3,
+          "nodes": 84,
+          "branching": 4,
+          "time": 0.005697159000192187,
+          "source": "iterative",
+          "score_cp": 171
+        }
+      },
+      "after": {
+        "median_seconds": 0.005427783999948588,
+        "samples_seconds": [
+          0.005311587999585754,
+          0.0059198750000177824,
+          0.006090051000228414,
+          0.005427783999948588,
+          0.0053661300003113865
+        ],
+        "metrics": {
+          "move": "a1b2",
+          "depth": 3,
+          "nodes": 84,
+          "branching": 4,
+          "time": 0.005330175999915809,
+          "source": "iterative",
+          "score_cp": 171
+        }
+      }
+    }
+  ]
+}

@@ -330,3 +330,95 @@ class TestResponsiveUI(unittest.TestCase):
         self.pump()
         self.assertEqual(len(view.canvases), 64)
         self.root.report_callback_exception.assert_not_called()
+
+    def test_fen_study_preserves_live_game_and_recovery(self):
+        self.app.board.push_uci('e2e4')
+        self.app.update_board(force=True)
+        before = self.app.board.fen()
+        with patch('studio_tools.simpledialog.askstring', return_value='7k/8/5KQ1/8/8/8/8/8 w - - 0 1'):
+            self.app._study_fen()
+        self.pump()
+        self.assertEqual(self.app._activity, 'review')
+        self.assertNotEqual(self.app.board.fen(), before)
+        self.app._save_session()
+        self.assertEqual(self.app.session_store.load()['board'].fen(), before)
+        self.app._return_to_game()
+        self.assertEqual(self.app.board.fen(), before)
+
+    def test_learning_import_failure_keeps_live_and_saved_memory(self):
+        path = Path(self.tmp.name) / 'import.json'
+        path.write_text('{"position|e2e4": {"w": 2, "l": 0, "d": 0}}')
+        before = dict(self.app.ai.learning_db)
+        with patch('game_controller.filedialog.askopenfilename', return_value=str(path)), \
+             patch.object(self.app.ai, '_save_learning_db', side_effect=OSError('disk full')), \
+             patch('studio_tools.messagebox.showerror') as error:
+            self.app.import_learning()
+        self.assertEqual(self.app.ai.learning_db, before)
+        error.assert_called_once()
+
+    def test_named_profile_switch_starts_paused_without_old_game_log(self):
+        self.app.ai.game_log = [('position', 'e2e4', True)]
+        with patch('studio_tools.simpledialog.askstring', return_value='experiment'), \
+             patch('studio_tools.messagebox.askyesno', return_value=True):
+            self.app._select_profile()
+        self.assertEqual(Path(self.app.ai._learning_path).parts[-3:], ('profiles', 'experiment', 'ai_learn.json'))
+        self.assertEqual(self.app.ai.game_log, [])
+        self.assertFalse(self.app.game_started)
+        self.assertEqual(self.app.config.get('learning_profile'), 'experiment')
+
+    def test_underpromotion_en_passant_and_castling_restrictions_in_gui(self):
+        self.app.play_mode = 'player_vs_player'
+        self.app.game_started = True
+        self.app.board = chess.Board('7k/P7/8/8/8/8/8/7K w - - 0 1')
+        self.app.update_board(force=True)
+        with patch.object(self.app, 'ask_promotion', return_value=chess.KNIGHT):
+            self.app.on_click(chess.A7)
+            self.app.on_click(chess.A8)
+        self.assertEqual(self.app.board.piece_at(chess.A8).piece_type, chess.KNIGHT)
+        self.app.new_game()
+        self.app.play_mode = 'player_vs_player'
+        self.app.game_started = True
+        self.app.board = chess.Board('k3r3/8/8/3pP3/8/8/8/4K3 w - d6 0 1')
+        self.app.update_board(force=True)
+        before = self.app.board.fen()
+        self.app.on_click(chess.E5)
+        self.app.on_click(chess.D6)
+        self.assertEqual(self.app.board.fen(), before, 'En passant must not expose own king')
+        self.assertNotIn(chess.Move.from_uci('e1g1'), self.app.board.legal_moves)
+
+    def test_modal_maintenance_prevents_play_training_and_close(self):
+        self.app._tools_busy = True
+        self.app.game_started = False
+        self.app.toggle_game_started()
+        self.app.start_training_ai()
+        self.app.start_benchmark()
+        self.app.on_close()
+        self.assertTrue(self.root.winfo_exists())
+        self.assertFalse(self.app.game_started)
+        self.assertIsNone(self.app.training_ai)
+        self.assertIsNone(self.app.benchmark)
+        self.app._tools_busy = False
+
+    def test_repetition_draw_survives_session_roundtrip(self):
+        self.app.board = chess.Board()
+        for uci in ('g1f3','g8f6','f3g1','f6g8') * 2:
+            self.app.board.push_uci(uci)
+        self.assertTrue(self.app.board.can_claim_threefold_repetition())
+        self.app.update_board(force=True)
+        self.app._save_session()
+        self.assertFalse(self.app.session_store.path.exists(), 'Finished draw clears recovery slot')
+
+    def test_puzzle_pack_import_persists_and_underpromotion_is_selectable(self):
+        path = Path(__file__).resolve().parents[1] / 'assets' / 'puzzles' / 'studio-extras.json'
+        with patch('studio_tools.filedialog.askopenfilename', return_value=str(path)):
+            self.app._import_puzzle_pack()
+        self.assertEqual(len(self.app.puzzles), 11)
+        self.assertTrue((Path(self.tmp.name) / 'puzzle-packs' / 'studio-extras.json').exists())
+        self.app.workspace.select(self.app.practice_workspace)
+        self.pump()
+        self.app.practice_index = next(i for i,p in enumerate(self.app.puzzles) if p.id.endswith(':knight-promotion'))
+        self.app._load_practice()
+        with patch.object(self.app, 'ask_promotion', return_value=chess.KNIGHT):
+            self.app._practice_click(chess.A7)
+            self.app._practice_click(chess.A8)
+        self.assertTrue(self.app.practice_done)
