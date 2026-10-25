@@ -25,7 +25,7 @@ def learning_records(data):
         raise ValueError('Learning data must be an object')
     if 'data' in data or ('meta' in data and 'positions' not in data):
         meta = data.get('meta')
-        if not isinstance(meta, dict) or meta.get('version') not in (1, 2, 3):
+        if not isinstance(meta, dict) or type(meta.get('version')) is not int or meta.get('version') not in (1, 2, 3):
             raise ValueError('Unsupported learning format version')
         data = data.get('data')
     elif 'positions' in data:
@@ -66,7 +66,7 @@ def learning_records(data):
 
 
 def configuration(data):
-    if not isinstance(data, dict) or data.get('schema_version', 1) != 1:
+    if not isinstance(data, dict) or type(data.get('schema_version', 1)) is not int or data.get('schema_version', 1) != 1:
         raise ValueError('Unsupported preferences format')
     for key, low, high in (('transposition_limit', 1000, 200000), ('learning_max_entries', 1000, 100000), ('ai_depth', 1, 12), ('clock_time', 0, 86400),
                             ('clock_increment', 0, 3600), ('window_width', 100, 20000),

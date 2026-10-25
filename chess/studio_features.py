@@ -301,7 +301,7 @@ class StudioFeatures:
                 row = runner.rows[index]
                 loss = row['estimated_loss_cp']
                 estimate = 'unavailable' if loss is None else ('mate risk' if loss > 9000000 else f'{loss / 100:.2f} pawns')
-                text += f"\nPlayed: {row['san']} · Search suggested: {row['suggested']}\nEstimated loss: {estimate}\n{row['note']}"
+                text += f"\nPlayed: {row['san']} · Search suggested: {row['suggested']}\nEstimated loss: {estimate}\n{row['note']}\n{row.get('reason', '')}"
         else:
             text += '\nChoose Analyze game to see possible mistakes and suggested alternatives.'
         self.review_text.set(text)

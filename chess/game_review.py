@@ -46,6 +46,8 @@ class ReviewRunner:
                 turn = board.turn
                 san = board.san(move)
                 suggested = board.san(before_move) if before_move else '—'
+                from chess_coach import describe_move
+                reason = describe_move(board, before_move) if before_move else 'No legal suggestion available.'
                 board.push(move)
                 after_move, after_score, after_depth = self._evaluate(board)
                 loss = None
@@ -60,7 +62,7 @@ class ReviewRunner:
                 if loss is not None and loss >= 150 and before_depth and (after_depth or board.is_game_over()):
                     note = 'Possible mistake: this search preferred a different move.'
                 self.rows.append({'move': move.uci(), 'san': san, 'suggested': suggested,
-                    'score_before_white': before_score, 'score_after_white': after_score,
+                    'reason': reason, 'score_before_white': before_score, 'score_after_white': after_score,
                     'estimated_loss_cp': loss, 'note': note, 'depth': before_depth})
                 before_move, before_score, before_depth = after_move, after_score, after_depth
         except Exception as exc:
@@ -79,5 +81,5 @@ def annotated_pgn(runner):
             break
         node = node.variations[0]
         node.comment = (f"Shallow estimate: suggested {row['suggested']}. {row['note']} "
-                        f"Search depth {row['depth']}; node budget {runner.nodes}.")
+                        f"{row.get('reason', '')} Search depth {row['depth']}; node budget {runner.nodes}.")
     return str(game) + '\n'
