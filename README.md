@@ -35,6 +35,11 @@ for the ready-to-run app. macOS/Linux users currently run from source.
 Training records move outcomes; this is not a neural network. Difficulty settings
 are search budgets, not Elo ratings, and training does not guarantee stronger play.
 
+## Project planning
+
+Follow the [Chess Studio Kanban board](KANBAN.md) for completed work, prioritized
+improvements, and issue acceptance checklists.
+
 ## Documentation
 
 | Guide | Use it for |
