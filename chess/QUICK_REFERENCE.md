@@ -6,8 +6,8 @@
 | --- | --- |
 | Play | Mode, difficulty, side, Play/Pause, Hint |
 | Play → Game | Move list, Save/Load PGN, Undo, New, Restart |
-| Play → Practice | Six lessons, 13 exercises, automatic replies, saved progress |
-| Play → Review | Position navigation, Analyze game, legal continuation, Cancel |
+| Play → Practice | Nine lessons, 21 exercises, automatic replies, adaptive reviews |
+| Play → Review | Position navigation, Analyze game, legal continuation, Coaching moments, Cancel |
 | Training | Start, Stop and save, Resume, settings, memory import/export/reset |
 | Settings → Appearance | Theme, flip board, sound, clock |
 | Settings → Access | Larger text, contrast, image/symbol/letter pieces |
@@ -93,3 +93,7 @@ as unfinished games. See [the reference review](REFERENCE_REVIEW.md) and
 See [guided learning](GUIDED_LEARNING.md) for lesson progression, multi-move packs,
 review limitations and independent evaluation metadata. Resume rejects memory
 changed outside the checkpoint; Start a new run keeps that newer memory.
+
+Review → Analyze game → Coaching moments → Practice this idea connects a game
+position to a related exercise. Practice → Adaptive practice chooses due work.
+Support & study → Comparison history → Compare trends separates incompatible runs.

@@ -96,3 +96,10 @@ refuses to replace that newer memory; choose Start for a new set of counters.
 Back up before upgrading; journal recovery is not a hardware/power-loss guarantee.
 Lesson progress stays in preferences. Both ZIPs include the same course and
 evaluation resources and must be rebuilt/downloaded together to receive updates.
+
+Coaching/adaptive update: both editions share nine lessons/21 exercises, three
+review moments linked to practice, local spaced review scheduling and comparable
+protocol-2 evaluation trends. Existing solved progress is retained. Preserve
+`chess_config.json` with the complete data folder to keep the new practice schedule.
+Physical Windows scaling, screen-reader and owner-profile upgrade checks remain
+unverified; use the manual checklist and retain a backup.

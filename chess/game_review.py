@@ -69,6 +69,8 @@ class ReviewRunner:
                     break
                 turn = board.turn
                 san = board.san(move)
+                fen_before = board.fen()
+                move_number = board.fullmove_number
                 suggested = board.san(before_move) if before_move else '—'
                 from chess_coach import describe_move
                 reason = describe_move(board, before_move) if before_move else 'No legal suggestion available.'
@@ -88,7 +90,8 @@ class ReviewRunner:
                     note = 'Mate-related score: no precise pawn-loss estimate is available.'
                 if loss is not None and loss >= 150 and before_depth and (after_depth or board.is_game_over()):
                     note = 'Possible mistake: this search preferred a different move.'
-                self.rows.append({'move': move.uci(), 'san': san, 'suggested': suggested,
+                self.rows.append({'fen_before': fen_before, 'move_number': move_number,
+                    'side': 'white' if turn else 'black', 'move': move.uci(), 'san': san, 'suggested': suggested,
                     'reason': reason, 'score_before_white': before_score, 'score_after_white': after_score,
                     'estimated_loss_cp': loss, 'note': note, 'depth': before_depth,
                     'continuation': continuation, 'facts': facts, 'played_facts': played_facts,

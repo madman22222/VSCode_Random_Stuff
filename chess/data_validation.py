@@ -97,6 +97,19 @@ def configuration(data):
         solved = data['practice_solved']
         if not isinstance(solved, list) or len(solved) > 10000 or any(not isinstance(item, str) or not 1 <= len(item) <= 100 for item in solved):
             raise ValueError('Invalid practice progress')
+    if 'practice_stats' in data:
+        stats = data['practice_stats']
+        if not isinstance(stats, dict) or len(stats) > 10000:
+            raise ValueError('Invalid adaptive practice records')
+        for puzzle_id, item in stats.items():
+            if not isinstance(puzzle_id, str) or not 1 <= len(puzzle_id) <= 100 or not isinstance(item, dict):
+                raise ValueError('Invalid adaptive practice entry')
+            for key in ('successes', 'mistakes', 'streak'):
+                if type(item.get(key)) is not int or not 0 <= item[key] <= 10**12:
+                    raise ValueError('Invalid practice counters')
+            for key in ('due', 'last'):
+                if type(item.get(key)) not in (int, float) or not math.isfinite(item[key]) or not 0 <= item[key] <= 10**12:
+                    raise ValueError('Invalid practice timestamp')
     if 'statistics' in data:
         if not isinstance(data['statistics'], dict) or any(type(v) is not int or v < 0
                                                          for v in data['statistics'].values()):

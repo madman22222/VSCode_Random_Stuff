@@ -105,3 +105,10 @@ guided-course and evaluation JSON resources; extracted source/frozen diagnostics
 exercise their loading, automatic replies, lesson progress, evaluation ledger,
 and the training recovery journal. Physical monitor scaling and screen-reader
 behavior require separate hands-on checks.
+
+Coaching/adaptive update: both editions share nine lessons/21 exercises, three
+review moments linked to practice, local spaced review scheduling and comparable
+protocol-2 evaluation trends. Existing solved progress is retained. Preserve
+`chess_config.json` with the complete data folder to keep the new practice schedule.
+Physical Windows scaling, screen-reader and owner-profile upgrade checks remain
+unverified; use the manual checklist and retain a backup.

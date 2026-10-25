@@ -206,6 +206,18 @@ class StudioTools:
                     listing.delete(index)
                 except OSError as exc:
                     self._tool_error('Delete failed', exc)
+        def trends():
+            from comparison_trends import trend_text
+            from data_validation import read_json
+            histories, skipped = [], 0
+            for path in choices[:500]:
+                try:
+                    histories.append((path.name, read_json(path)))
+                except (OSError, ValueError, TypeError):
+                    skipped += 1
+            text = trend_text(histories) + f'\nUnreadable reports skipped: {skipped}. Showing at most the latest 500 files.'
+            self._text_dialog('Comparable evaluation trends', text)
+        tk.Button(window, text='Compare trends across saved versions', command=trends).pack(fill='x')
         tk.Button(window, text='View / export selected report', command=export).pack(fill='x')
         tk.Button(window, text='Delete selected history report…', command=delete).pack(fill='x')
         tk.Label(window, text='History is isolated per training profile. No reports yet.' if not choices else

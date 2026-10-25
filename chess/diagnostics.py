@@ -103,6 +103,23 @@ def run_diagnostics(report_path):
             assert not review.running and review.last_error is None
             assert len(review.rows) == 2
             report['checks']['game_review'] = True
+            from coaching import coaching_moments
+            from adaptive_practice import record, recommend
+            from comparison_trends import trend_text
+            moments = coaching_moments(review.rows)
+            assert 1 <= len(moments) <= 3
+            app._open_practice_id(moments[0]['puzzle_id'])
+            pump()
+            assert app._activity == 'practice'
+            chosen = app.puzzles[app.practice_index]
+            stats = record({}, chosen.id, False, now=100)
+            assert recommend(app.puzzles, stats, now=100)[0].id == chosen.id
+            app.workspace.select(app.game_workspace)
+            pump()
+            assert app.board.fen() == before
+            assert len(course_puzzles()) == 14
+            assert 'Group 1' in trend_text([('diagnostic', comparison.result)])
+            report['checks']['coaching_adaptive_and_trends'] = True
             tactics = run_suite(app.ai)
             assert tactics['passed'] == tactics['total'], str(tactics)
             report['checks']['tactics'] = tactics['passed']

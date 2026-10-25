@@ -18,6 +18,8 @@ class PracticeControls:
         chooser.bind('<<ComboboxSelected>>', self._lesson_changed)
         tk.Button(self.practice_workspace, text='Continue recommended lesson',
                   command=self._continue_lesson).pack(fill='x')
+        tk.Button(self.practice_workspace, text='Adaptive practice: next review',
+                  command=self._adaptive_next).pack(fill='x')
         self.lesson_text = tk.StringVar(master=self.master)
         tk.Label(self.practice_workspace, textvariable=self.lesson_text, wraplength=365,
                  justify='left').pack(fill='x', pady=4)
@@ -74,6 +76,7 @@ class PracticeControls:
         self.board = self.practice_session.board if self.practice_session else chess.Board(puzzle.fen)
         self.practice_done = False
         self.practice_hint_level = 0
+        self._practice_missed = False
         self.selected = None
         self._cancel_search()
         if self.board_view.flipped != (self.board.turn == chess.BLACK):
@@ -87,6 +90,7 @@ class PracticeControls:
 
     def _mark_practice_solved(self, puzzle):
         self.practice_done = True
+        self._record_practice(True, assisted=self._practice_missed or self.practice_hint_level > 0)
         solved = list(self.config.get('practice_solved', [])) if self.config else []
         if puzzle.id not in solved:
             solved.append(puzzle.id)
@@ -122,6 +126,7 @@ class PracticeControls:
         if self.practice_session:
             result = self.practice_session.attempt(move)
             if not result['accepted']:
+                self._record_practice(False)
                 self.practice_text.set(result['message'])
                 return
             self.board = self.practice_session.board
@@ -134,6 +139,7 @@ class PracticeControls:
             self._mark_practice_solved(puzzle)
             self.practice_text.set('Correct! Choose Next for another puzzle.')
         else:
+            self._record_practice(False)
             self.practice_text.set('That is legal, but it does not meet the puzzle goal. Try again or use Hint.')
             return
         self.selected = None
@@ -155,3 +161,25 @@ class PracticeControls:
         current = indexes.index(self.practice_index) if self.practice_index in indexes else -1
         self.practice_index = indexes[(current + 1) % len(indexes)]
         self._load_practice()
+
+    def _record_practice(self, success, assisted=False):
+        if not success:
+            self._practice_missed = True
+        if not self.config:
+            return
+        from adaptive_practice import record
+        puzzle = self.puzzles[self.practice_index]
+        stats = record(self.config.get('practice_stats', {}), puzzle.id, success, assisted)
+        try:
+            self.config.set('practice_stats', stats)
+        except (OSError, ValueError) as exc:
+            self.feedback_var.set(f'Practice schedule not saved: {exc}')
+
+    def _adaptive_next(self):
+        from adaptive_practice import recommend
+        stats = self.config.get('practice_stats', {}) if self.config else {}
+        solved = self.config.get('practice_solved', []) if self.config else []
+        puzzle, reason = recommend(self.puzzles, stats, solved)
+        if puzzle:
+            self._open_practice_id(puzzle.id)
+            self.practice_text.set(reason + '\n' + self.practice_text.get())

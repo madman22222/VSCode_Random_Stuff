@@ -327,7 +327,9 @@ class BenchmarkRunner:
                        'candidate_outcome_scoring': self.candidate.use_outcome_scoring,
                        'ci95_score_percent': [0.0, 100.0], 'completed_pairs': 0,
                        'scoring_recommended': False}
-        self.result.update(evaluation_suite=suite_meta or {'id': 'training-openings'},
+        self.result.update(evaluation_protocol=2, baseline_memory_fingerprint=memory_fingerprint(self.baseline),
+                           baseline_outcome_scoring=self.baseline.use_outcome_scoring,
+                           evaluation_suite=suite_meta or {'id': 'training-openings'},
                            memory_fingerprint=memory_fingerprint(ai), games_ledger=[], categories={})
         self._stop = threading.Event()
         self.result_path = ai._learning_path + '.benchmark.json'
