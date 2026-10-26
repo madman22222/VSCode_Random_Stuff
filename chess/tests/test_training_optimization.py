@@ -128,3 +128,22 @@ class TestTrainingOptimization(unittest.TestCase):
         with self.assertRaises(TypeError):
             atomic_json(path, {'bad': object()})
         self.assertEqual(path.read_bytes(), original)
+
+    def test_terminal_reuse_and_custom_evaluator_keep_public_contract(self):
+        mate = chess.Board('k7/1Q6/2K5/8/8/8/8/8 b - - 0 1')
+        self.assertEqual(self.ai.evaluate(mate), -9999999)
+        normal = chess.Board()
+        self.assertEqual(self.ai.evaluate(normal), self.ai.evaluate(normal, _terminal_checked=True))
+        self.ai.evaluate = lambda board: 123
+        self.ai._evaluation_cache.clear()
+        self.assertEqual(self.ai._evaluate_cached(normal, _terminal_checked=True), 123)
+
+    def test_pawn_cache_is_exact_after_pawn_moves_and_remains_bounded(self):
+        self.ai.pawn_cache_limit = 2
+        board = chess.Board()
+        for uci in ('e2e4', 'd7d5', 'e4d5', 'e7e6'):
+            board.push_uci(uci)
+            for color in chess.COLORS:
+                self.assertEqual(self.ai.evaluate_pawn_structure(board, color),
+                                 reference_pawns(self.ai, board, color))
+                self.assertLessEqual(len(self.ai._pawn_cache), 2)

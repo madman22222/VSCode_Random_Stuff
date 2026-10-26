@@ -73,6 +73,8 @@ class SimpleAI:
         self.depth = depth
         self.nodes_searched = 0
         self.last_move_metrics = {}
+        self._pawn_cache = OrderedDict()
+        self.pawn_cache_limit = 1024
         self._evaluation_cache = OrderedDict()
         self.evaluation_cache_limit = 4096
         self.transposition_table = OrderedDict()
@@ -106,6 +108,7 @@ class SimpleAI:
         ai.load_error = getattr(self, "load_error", None) if learning else None
         ai.use_learning = self.use_learning if learning else False
         ai.compress_learning = self.compress_learning
+        ai.pawn_cache_limit = self.pawn_cache_limit
         ai.evaluation_cache_limit = self.evaluation_cache_limit
         ai.transposition_limit = self.transposition_limit
         ai.learning_max_entries = self.learning_max_entries
@@ -317,9 +320,10 @@ class SimpleAI:
         elif piece.piece_type == chess.QUEEN: return self.QUEEN_TABLE[sq]
         elif piece.piece_type == chess.KING: return self.KING_ENDGAME_TABLE[sq] if phase==2 else self.KING_MIDDLEGAME_TABLE[sq]
         return 0
-    def evaluate(self, board: chess.Board) -> int:
-        if board.is_checkmate(): return -9999999
-        if board.is_stalemate() or board.is_insufficient_material(): return 0
+    def evaluate(self, board: chess.Board, _terminal_checked=False) -> int:
+        if not _terminal_checked:
+            if board.is_checkmate(): return -9999999
+            if board.is_stalemate() or board.is_insufficient_material(): return 0
         phase = self.game_phase(board)
         score = 0
         tables = (None, self.PAWN_TABLE, self.KNIGHT_TABLE, self.BISHOP_TABLE,
@@ -350,7 +354,7 @@ class SimpleAI:
         finally:
             board.turn = current_turn
 
-    def _evaluate_cached(self, board):
+    def _evaluate_cached(self, board, _terminal_checked=False):
         # Static evaluation does not use repetition/fifty-move claims. Search
         # checks those separately at every node. Include phase, promotion and
         # castling/EP state so every legal-mobility input remains represented.
@@ -361,7 +365,12 @@ class SimpleAI:
         cached = self._evaluation_cache.get(key)
         if cached is not None:
             return cached
-        score = self.evaluate(board)
+        # Preserve custom evaluation overrides; only the base evaluator accepts
+        # this search-internal proof that terminal rules were already checked.
+        if _terminal_checked and type(self).evaluate is SimpleAI.evaluate and 'evaluate' not in self.__dict__:
+            score = self.evaluate(board, _terminal_checked=True)
+        else:
+            score = self.evaluate(board)
         if self.evaluation_cache_limit > 0:
             if len(self._evaluation_cache) >= self.evaluation_cache_limit:
                 self._evaluation_cache.popitem(last=False)
@@ -392,6 +401,10 @@ class SimpleAI:
     def evaluate_pawn_structure(self, board: chess.Board, color: bool) -> int:
         pawns = board.pawns & board.occupied_co[color]
         enemies = board.pawns & board.occupied_co[not color]
+        cache_key = pawns, enemies, color
+        cached = self._pawn_cache.get(cache_key)
+        if cached is not None:
+            return cached
         counts = tuple(chess.popcount(pawns & file) for file in chess.BB_FILES)
         score = 0
         for square in chess.scan_forward(pawns):
@@ -405,6 +418,10 @@ class SimpleAI:
                 score -= 20
             if pawns & adjacent & _AHEAD_RANKS[not color][rank]:
                 score -= 10
+        if self.pawn_cache_limit > 0:
+            if len(self._pawn_cache) >= self.pawn_cache_limit:
+                self._pawn_cache.popitem(last=False)
+            self._pawn_cache[cache_key] = score
         return score
     def is_passed_pawn(self, board: chess.Board, square: int, color: bool) -> bool:
         pawn_file = chess.square_file(square); pawn_rank = chess.square_rank(square); enemy_color = not color; enemy_pawns = board.pieces(chess.PAWN, enemy_color)
@@ -446,10 +463,10 @@ class SimpleAI:
             if outcome is not None:
                 return -9999999 if outcome.winner is not None else 0
         if ply >= 16:
-            return self._evaluate_cached(board)
+            return self._evaluate_cached(board, _terminal_checked=True)
         in_check = board.is_check()
         if not in_check:
-            stand_pat = self._evaluate_cached(board)
+            stand_pat = self._evaluate_cached(board, _terminal_checked=True)
             if stand_pat >= beta:
                 return beta
             alpha = max(alpha, stand_pat)
@@ -539,6 +556,7 @@ class SimpleAI:
         start = time.monotonic()
         self.nodes_searched = 0
         self._evaluation_cache.clear()
+        self._pawn_cache.clear()
         self._node_limit = node_limit
         while len(self.transposition_table) > self.transposition_limit:
             self.transposition_table.popitem(last=False)
