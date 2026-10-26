@@ -53,8 +53,10 @@ class TrainingAI:
     def __init__(self, ai_instance: SimpleAI, depth=3, batch_size=100,
                  export_interval=None, move_time_limit=0.25,
                  max_games=0, max_moves=300, exploration_rate=0.10,
-                 varied_starts=True, seed=42, resume=False):
+                 varied_starts=True, seed=42, resume=False, cpu_percent=100, checkpoint_keep=3):
         self.ai = ai_instance
+        self.cpu_percent = max(10, min(100, int(cpu_percent)))
+        self.checkpoint_keep = max(1, min(10, int(checkpoint_keep)))
         self.depth = max(1, int(depth))
         self.batch_size = max(1, int(batch_size))
         self.export_interval = export_interval
@@ -117,6 +119,8 @@ class TrainingAI:
         self.exploration_rate = float(settings.get('exploration', self.exploration_rate))
         self.varied_starts = bool(settings.get('varied_starts', self.varied_starts))
         self.seed = int(settings.get('seed', self.seed))
+        self.cpu_percent = int(settings.get('cpu_percent', self.cpu_percent))
+        self.checkpoint_keep = int(settings.get('checkpoint_keep', self.checkpoint_keep))
 
     def snapshot(self):
         with self._lock:
@@ -131,7 +135,9 @@ class TrainingAI:
                     'error': str(self.last_error) if self.last_error else None,
                     'settings': {'depth': self.depth, 'move_ms': self.move_time_limit * 1000,
                                  'exploration': self.exploration_rate,
-                                 'varied_starts': self.varied_starts, 'seed': self.seed}}
+                                 'varied_starts': self.varied_starts, 'seed': self.seed,
+                                 'workers': getattr(self, 'workers', 1), 'cpu_percent': self.cpu_percent,
+                                 'checkpoint_keep': self.checkpoint_keep}}
 
     def progress_summary(self, snap=None):
         snap = snap or self.snapshot()
@@ -157,6 +163,9 @@ class TrainingAI:
         current_fingerprint = fingerprint(self.ai.learning_db)
         previous_fingerprint = (self._published_fingerprint if self.ai._writer_lease is not None
                                 and self._published_fingerprint is not None else fingerprint(disk_records(self.ai)))
+        from recovery_tools import rotate_checkpoint
+        rotate_checkpoint(self.journal_path, self.checkpoint_keep,
+                          trusted=self.ai._writer_lease is not None and self._published_fingerprint is not None)
         atomic_json(self.journal_path, {'version': 1,
             'memory': {'meta': {'version': self.ai.learning_version}, 'data': self.ai.learning_db},
             'fingerprint': current_fingerprint,
@@ -223,34 +232,44 @@ class TrainingAI:
         if self.thread and self.thread is not threading.current_thread():
             self.thread.join()
 
-    def _training_loop(self):
+    def _games(self):
         rng = random.Random(self.seed + self.games_played)
-        try:
-            while not self._stop.is_set() and (not self.max_games or self._session_games < self.max_games):
-                board = starting_board(rng, self.varied_starts)
+        while not self._stop.is_set() and (not self.max_games or self._session_games < self.max_games):
+            board = starting_board(rng, self.varied_starts)
+            self.ai.game_log = []
+            self.ai.transposition_table.clear()
+            self.ai.history.clear()
+            self.ai.killers.clear()
+            self.current_move_count = 0
+            while (not board.is_game_over(claim_draw=True)
+                   and self.current_move_count < self.max_moves and not self._stop.is_set()):
+                move_started = time.monotonic()
+                if self.current_move_count < 20 and rng.random() < self.exploration_rate:
+                    choices = self.ai._order_moves(board, list(board.legal_moves), 1)[:4]
+                    move = rng.choice(choices)
+                    self.ai._log_choice(position_key(board), move.uci(), board.turn)
+                else:
+                    move = self.ai.choose_move_iterative(board, self.move_time_limit)
+                if move is None or move not in board.legal_moves:
+                    raise RuntimeError('AI did not return a legal move')
+                board.push(move)
+                self.current_move_count += 1
+                if self.cpu_percent < 100:
+                    self._stop.wait(min(1, (time.monotonic() - move_started) * (100 / self.cpu_percent - 1)))
+            if self._stop.is_set():
                 self.ai.game_log = []
-                self.ai.transposition_table.clear()
-                self.ai.history.clear()
-                self.ai.killers.clear()
-                self.current_move_count = 0
-                while (not board.is_game_over(claim_draw=True)
-                       and self.current_move_count < self.max_moves and not self._stop.is_set()):
-                    if self.current_move_count < 20 and rng.random() < self.exploration_rate:
-                        choices = self.ai._order_moves(board, list(board.legal_moves), 1)[:4]
-                        move = rng.choice(choices)
-                        self.ai._log_choice(position_key(board), move.uci(), board.turn)
-                    else:
-                        move = self.ai.choose_move_iterative(board, self.move_time_limit)
-                    if move is None or move not in board.legal_moves:
-                        raise RuntimeError('AI did not return a legal move')
-                    board.push(move)
-                    self.current_move_count += 1
-                if self._stop.is_set():
-                    self.ai.game_log = []
-                    break
+                break
+            outcome = board.outcome(claim_draw=True)
+            winner = 'draw' if outcome is None or outcome.winner is None else (
+                'white' if outcome.winner == chess.WHITE else 'black')
+            yield board, winner, list(self.ai.game_log), self.current_move_count
+
+    def _training_loop(self):
+        try:
+            for board, winner, log, moves in self._games():
+                self.ai.game_log = log
+                self.current_move_count = moves
                 outcome = board.outcome(claim_draw=True)
-                winner = 'draw' if outcome is None or outcome.winner is None else (
-                    'white' if outcome.winner == chess.WHITE else 'black')
                 with self._lock:
                     played_positions = {key for key, _, _ in self.ai.game_log}
                     prune_time = self.ai._last_prune_time

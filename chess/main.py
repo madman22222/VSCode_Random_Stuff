@@ -36,8 +36,9 @@ def run_training(args) -> int:
     except Exception:
         pass
 
-    trainer = TrainingAI(
-        ai_instance=ai,
+    from parallel_training import training_factory
+    trainer = training_factory(
+        ai_instance=ai, workers=args.workers, cpu_percent=args.cpu_percent, checkpoint_keep=args.checkpoint_keep,
         depth=depth,
         batch_size=batch_size,
         export_interval=export_interval,
@@ -81,6 +82,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-varied-starts", action="store_true", help="Always train from the initial position")
     p.add_argument("--seed", type=int, default=42, help="Opening/exploration random seed")
     p.add_argument("--nodes", type=int, default=500, help="Comparison search nodes per move")
+    p.add_argument("--workers", type=int, default=1, help="Training workers: 1 preserves online learning; 2–8 uses frozen waves")
+    p.add_argument("--cpu-percent", type=int, default=100, help="Approximate per-worker CPU duty, 10–100")
+    p.add_argument("--checkpoint-keep", type=int, default=3, help="Retain 1–10 rolling checkpoint generations")
     p.add_argument("--training", action="store_true", help="Run headless Training AI instead of GUI")
     p.add_argument("--depth", type=int, default=3, help="AI search depth (default: 3)")
     p.add_argument("--batch-size", type=int, default=100, help="Training: games per batch before saving (default: 100)")
@@ -105,6 +109,8 @@ def main(argv=None):
 
     if not 0 <= args.exploration <= 1 or args.nodes < 1:
         parser.error("Exploration must be between 0 and 1; nodes must be positive")
+    if not 1 <= args.workers <= 8 or not 10 <= args.cpu_percent <= 100 or not 1 <= args.checkpoint_keep <= 10:
+        parser.error("Workers: 1–8; CPU duty: 10–100; checkpoints: 1–10")
     if args.training and args.benchmark:
         parser.error("Choose training or comparison, not both")
     if args.benchmark:
@@ -131,5 +137,7 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    import multiprocessing
+    multiprocessing.freeze_support()
     raise SystemExit(main())
 # pyright: reportMissingImports=false, reportUnknownMemberType=false
