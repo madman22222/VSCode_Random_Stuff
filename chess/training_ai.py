@@ -147,6 +147,8 @@ class TrainingAI:
         return text
 
     def _checkpoint(self):
+        if getattr(self.ai, 'load_error', None):
+            raise ValueError(self.ai.load_error)
         from training_journal import disk_records, fingerprint
         # Publish the authoritative pair first. A kill between the following two
         # compatibility writes is recoverable without guessing which counters fit.
@@ -175,6 +177,8 @@ class TrainingAI:
         self.ai.acquire_writer()
         self._published_fingerprint = None
         try:
+            if getattr(self.ai, 'load_error', None):
+                raise ValueError(self.ai.load_error)
             if self.resuming:
                 # Revalidate after taking the writer lease: construction is read-only.
                 self._load_progress()

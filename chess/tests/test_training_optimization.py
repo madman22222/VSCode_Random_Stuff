@@ -163,3 +163,19 @@ class TestTrainingOptimization(unittest.TestCase):
             check = position.is_check()
             expected = [m for m in position.legal_moves if check or position.is_capture(m) or m.promotion]
             self.assertEqual(self.ai._quiescence_moves(position, check), expected, position.fen())
+
+    def test_unreadable_memory_cannot_replace_previous_or_recovery_snapshots(self):
+        self.path.write_text('{broken memory')
+        ai = SimpleAI(learning_path=self.path)
+        self.assertIsNotNone(ai.load_error)
+        previous = Path(str(self.path) + '.previous.json')
+        journal = Path(str(self.path) + '.checkpoint.json')
+        previous.write_text('retained previous snapshot')
+        journal.write_text('retained recovery snapshot')
+        worker = TrainingAI(ai, max_games=1)
+        with self.assertRaises(ValueError): worker.start()
+        with self.assertRaises(ValueError): worker._checkpoint()
+        self.assertEqual(previous.read_text(), 'retained previous snapshot')
+        self.assertEqual(journal.read_text(), 'retained recovery snapshot')
+        self.assertEqual(self.path.read_text(), '{broken memory')
+        ai.acquire_writer(); ai.release_writer()

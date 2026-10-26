@@ -31,11 +31,11 @@ benchmark, never as a second application edition. Both released editions use
   lease. Resume/new ownership revalidate canonical data; manual saves read it anew.
 - JSON is serialized in one write; the recovery journal uses compact JSON.
   Gzip level 1 reduces save CPU at the cost of a larger compressed memory file.
-  Existing plain/gzip profiles remain readable, with identical recovered records.
+  Existing plain/gzip profiles remain readable, with identical recovered records.\n  Known unreadable memory is rejected before previous/recovery snapshots can be replaced.
 
 Static caches are capped at 4,096 evaluations and 1,024 pawn structures per engine
 and reset for each search. Faster serialization allocates a temporary JSON string;
-the benchmark separately measures peak traced checkpoint allocations. Atomic
+the benchmark separately measures peak traced checkpoint allocations. The incremental\nposition index retains one entry per current learned position, trading bounded\nprofile-sized bookkeeping memory for fewer full-database scans. Atomic
 replacement, writer leases and interrupted-save recovery remain in place.
 
 ## Evidence and its limits
