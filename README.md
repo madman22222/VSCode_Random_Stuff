@@ -33,6 +33,15 @@ commit; download rebuilt ZIPs to receive updates. Personal saves are separate.
 See the [chess reference review](chess/REFERENCE_REVIEW.md) for rules covered,
 corrections in the supplied PDFs, regression evidence and engine limitations.
 
+## A calmer workspace
+
+The desktop uses warm neutral panels and emerald accents, a complete dark theme,
+one-click theme switching, and player cards that follow the board orientation,
+turn and clock. Long explanations keep native scrolling, and the board continues
+to scale with the window. See [the visual refresh](chess/UI_GUIDE.md).
+
+![Chess Studio light appearance](docs/screenshots/studio-light.png)
+
 ## What is included
 
 - A resizable board; Play AI, Two players, and Watch AI modes; hints and PGN save/load.

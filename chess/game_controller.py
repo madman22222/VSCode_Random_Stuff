@@ -26,6 +26,7 @@ from studio_tools import StudioTools
 from training_controls import TrainingControls
 from practice_controls import PracticeControls
 from coaching_controls import CoachingControls
+from studio_appearance import StudioAppearance
 from game_endings import GameEndings, Conclusion, EndReason, timeout_conclusion
 from app_paths import data_dir, resource_dir, training_command
 from tools.batch_pgn_converter import batch_convert
@@ -77,7 +78,7 @@ class Tooltip:
 HAS_UPGRADES = True
 
 
-class GameController(CoachingControls, PracticeControls, GameEndings, TrainingControls, StudioTools, StudioFeatures):
+class GameController(StudioAppearance, CoachingControls, PracticeControls, GameEndings, TrainingControls, StudioTools, StudioFeatures):
     """Coordinates the GUI view, AI, and engine manager.
 
     This class owns the game state and provides callbacks for UI events.
@@ -178,19 +179,18 @@ class GameController(CoachingControls, PracticeControls, GameEndings, TrainingCo
         master.columnconfigure(0, weight=3, minsize=500)
         master.columnconfigure(1, weight=1, minsize=440)
         master.rowconfigure(2, weight=1)
-        header = tk.Frame(master)
-        header.grid(row=0, column=0, columnspan=2, sticky='ew', padx=24, pady=(18, 4))
-        self.title_label = tk.Label(header, text='CHESS STUDIO', font=(self.ui_font, 19, 'bold'))
-        self.title_label.pack(side='left')
-        tk.Label(header, text='Play · Learn · Improve', font=(self.ui_font, 10)).pack(side='right')
+        header = self._build_studio_header()
         self.status = tk.Label(master, text='White to move', font=(self.ui_font, 12, 'bold'), anchor='w')
         self.status.grid(row=1, column=0, sticky='ew', padx=24, pady=(4, 8))
         self.hints_label = tk.Label(master, text='', font=(self.ui_font, 9), anchor='w', wraplength=420)
         self.hints_label.grid(row=1, column=1, sticky='ew', padx=16)
         self.ai_last_explanation = ''
 
-        self.board_area = tk.Frame(master)
-        self.board_area.grid(row=2, column=0, sticky='nsew', padx=(24, 12), pady=(0, 20))
+        self.board_shell = tk.Frame(master)
+        self.board_shell.grid(row=2, column=0, sticky='nsew', padx=(24, 12), pady=(0, 20))
+        self._build_player_cards(self.board_shell)
+        self.board_area = tk.Frame(self.board_shell)
+        self.board_area.pack(fill='both', expand=True)
         board_frame = tk.Frame(self.board_area)
         board_frame.place(relx=0.5, rely=0.5, anchor='center', width=500, height=500)
         self.board_view = BoardView(board_frame, on_click=self.on_click)
@@ -269,15 +269,20 @@ class GameController(CoachingControls, PracticeControls, GameEndings, TrainingCo
         tk.Label(self.game_workspace, text='Moves', font=('Arial', 9, 'bold')).pack()
         self.move_list = tk.Listbox(self.game_workspace, width=20, height=7, font=('Arial', 8))
         self.move_list.pack(fill='both', expand=True, padx=2, pady=6)
+        self.move_list_empty = tk.Label(self.move_list, text='Ready for your first move\n\nYour move history will appear here.',
+                                        justify='center', wraplength=280)
+        self.move_list_empty.place(relx=.5, rely=.5, anchor='center', relwidth=.9)
 
         btn_frame = tk.Frame(self.game_workspace)
-        btn_frame.pack(pady=2)
-        tk.Button(btn_frame, text='Save', command=self.save_pgn, font=('Arial', 8)).grid(row=0, column=0, padx=1)
-        tk.Button(btn_frame, text='Load', command=self.load_pgn, font=('Arial', 8)).grid(row=0, column=1, padx=1)
-        tk.Button(btn_frame, text='Undo', command=self.undo_move, font=('Arial', 8)).grid(row=0, column=2, padx=1)
+        btn_frame.pack(fill='x', pady=4)
+        for column in range(5):
+            btn_frame.columnconfigure(column, weight=1)
+        tk.Button(btn_frame, text='Save', command=self.save_pgn, font=('Arial', 8)).grid(row=0, column=0, padx=2, sticky='ew')
+        tk.Button(btn_frame, text='Load', command=self.load_pgn, font=('Arial', 8)).grid(row=0, column=1, padx=2, sticky='ew')
+        tk.Button(btn_frame, text='Undo', command=self.undo_move, font=('Arial', 8)).grid(row=0, column=2, padx=2, sticky='ew')
         # New Game button available in all modes
-        tk.Button(btn_frame, text='New', command=self.new_game, font=('Arial', 8)).grid(row=0, column=3, padx=1)
-        tk.Button(btn_frame, text='Restart', command=self.restart_game, font=('Arial', 8)).grid(row=0, column=4, padx=1)
+        tk.Button(btn_frame, text='New', command=self.new_game, font=('Arial', 8)).grid(row=0, column=3, padx=2, sticky='ew')
+        tk.Button(btn_frame, text='Restart', command=self.restart_game, font=('Arial', 8)).grid(row=0, column=4, padx=2, sticky='ew')
         
         # AI depth - header with info
         depth_header = tk.Frame(tuning_page)
@@ -354,9 +359,12 @@ class GameController(CoachingControls, PracticeControls, GameEndings, TrainingCo
         dashboard.pack(fill='x', pady=(0, 8))
         dashboard_actions = tk.Frame(dashboard)
         dashboard_actions.pack(fill='x')
+        self.training_action_buttons = {}
         for label, command in (('Start', self.start_training_ai), ('Stop and save', self.stop_training_ai),
                                ('Resume', lambda: self.start_training_ai(resume=True))):
-            tk.Button(dashboard_actions, text=label, command=command).pack(side='left', fill='x', expand=True, padx=2)
+            button = tk.Button(dashboard_actions, text=label, command=command)
+            button.pack(side='left', fill='x', expand=True, padx=2)
+            self.training_action_buttons[label] = button
         self.training_dashboard_var = tk.StringVar(master=self.master, value='Ready. Resume reloads saved counters and move memory.')
         tk.Label(dashboard, textvariable=self.training_dashboard_var, justify='left',
                  wraplength=380).pack(fill='x', pady=8)
@@ -585,7 +593,8 @@ class GameController(CoachingControls, PracticeControls, GameEndings, TrainingCo
             tk.Entry(row, textvariable=variable, width=8).pack(side='right')
         row = tk.Frame(comparison)
         row.pack(fill='x', pady=8)
-        tk.Button(row, text='Run comparison', command=self.start_benchmark).pack(side='left')
+        self.benchmark_start_button = tk.Button(row, text='Run comparison', command=self.start_benchmark)
+        self.benchmark_start_button.pack(side='left')
         tk.Button(row, text='Cancel', command=self.stop_benchmark).pack(side='right')
         self.experimental_scoring_var = tk.BooleanVar(master=self.master, value=False)
         tk.Checkbutton(comparison, text='Test confidence-weighted scoring (experimental)',
@@ -952,6 +961,11 @@ class GameController(CoachingControls, PracticeControls, GameEndings, TrainingCo
             for line in lines:
                 self.move_list.insert(tk.END, line)
             self.move_list.see(tk.END)
+            if hasattr(self, 'move_list_empty'):
+                if lines:
+                    self.move_list_empty.place_forget()
+                else:
+                    self.move_list_empty.place(relx=.5, rely=.5, anchor='center', relwidth=.9)
         outcome = self._game_outcome()
         game_over_now = outcome is not None
         if outcome:
@@ -974,6 +988,8 @@ class GameController(CoachingControls, PracticeControls, GameEndings, TrainingCo
             except Exception:
                 pass
         self.update_controls_state()
+        self._player_cards_outcome = outcome
+        self._refresh_player_cards()
 
         if self._activity != 'game':
             return
@@ -1092,18 +1108,23 @@ class GameController(CoachingControls, PracticeControls, GameEndings, TrainingCo
             print(f"Board flip not supported: {e}")
     
     def change_theme(self, theme: str) -> None:
-        """Change the color theme."""
+        """Keep persisted theme, selector, board and dialogs in sync."""
+        if getattr(self, '_updating_theme', False):
+            return
+        self._updating_theme = True
         try:
-            # Keep board visuals constant; if BoardView supports set_theme, it may still use it for labels, etc.
+            if hasattr(self, 'theme_var') and self.theme_var.get() != theme:
+                self.theme_var.set(theme)
             if hasattr(self.board_view, 'set_theme'):
-                self.board_view.set_theme(theme)  # type: ignore
+                self.board_view.set_theme(theme)
             if self.config:
                 self.config.set('theme', theme)
-            # Apply background/foreground styles to UI, not the board squares
             self.apply_theme_to_ui(theme)
             self.update_board()
-        except Exception as e:
-            print(f"Theme change not supported: {e}")
+        except Exception as exc:
+            print(f'Theme change not supported: {exc}')
+        finally:
+            self._updating_theme = False
 
     def _schedule_board_resize(self, event=None):
         if self._board_resize_job is not None:
@@ -1123,66 +1144,7 @@ class GameController(CoachingControls, PracticeControls, GameEndings, TrainingCo
             self.board_view.highlight(self.selected)
 
     def apply_theme_to_ui(self, theme):
-        body_size = round(9 * self.text_scale)
-        dark = theme == 'dark'
-        bg, card, fg, muted = ('#17212f', '#223044', '#edf3fa', '#aebed0') if dark else (
-            '#edf2f7', '#ffffff', '#172b44', '#52657c')
-        accent = '#2563eb'
-        self.master.configure(bg=bg)
-        style = ttk.Style(self.master)
-        style.theme_use('clam')
-        style.configure('TNotebook', background=bg, borderwidth=0)
-        style.configure('TNotebook.Tab', padding=(8, 8), font=(self.ui_font, min(11, body_size)),
-                        background=bg, foreground=muted)
-        style.map('TNotebook.Tab', background=[('selected', card)],
-                  foreground=[('selected', accent)])
-
-        def decorate(widget):
-            # Board canvases and coordinate labels have their own rendering.
-            if widget is self.board_area:
-                widget.configure(bg=bg)
-                return
-            kind = widget.winfo_class()
-            try:
-                if kind in ('Frame', 'Labelframe'):
-                    widget.configure(bg=card, bd=0)
-                    if kind == 'Labelframe':
-                        widget.configure(fg=muted, font=(self.ui_font, body_size + 1, 'bold'),
-                                         padx=8, pady=6)
-                elif kind == 'Label':
-                    widget.configure(bg=card, fg=fg, font=(self.ui_font, body_size))
-                elif kind == 'Button':
-                    widget.configure(bg='#e7eef9' if not dark else '#334860', fg=fg,
-                                     activebackground=accent, activeforeground='white',
-                                     relief='flat', bd=0, padx=9, pady=6,
-                                     font=(self.ui_font, body_size), cursor='hand2')
-                elif kind in ('Checkbutton', 'Radiobutton'):
-                    widget.configure(bg=card, fg=fg, activebackground=card,
-                                     activeforeground=fg, selectcolor=card,
-                                     font=(self.ui_font, body_size), highlightthickness=0)
-                elif kind == 'TCombobox':
-                    widget.configure(font=(self.ui_font, body_size))
-                elif kind == 'Scale':
-                    widget.configure(bg=card, fg=fg, highlightthickness=0,
-                                     troughcolor=bg, bd=0)
-                elif kind in ('Entry', 'Listbox'):
-                    widget.configure(bg=bg, fg=fg, relief='flat', bd=0,
-                                     highlightthickness=1, highlightbackground=bg,
-                                     selectbackground=accent, selectforeground='white',
-                                     font=(self.ui_font, 10))
-            except tk.TclError:
-                pass
-            for child in widget.winfo_children():
-                decorate(child)
-        for child in self.master.winfo_children():
-            decorate(child)
-        self.title_label.configure(font=(self.ui_font, 19, 'bold'))
-        self.status.configure(bg=bg, fg=fg, font=(self.ui_font, 12, 'bold'))
-        self.hints_label.configure(bg=bg, fg=muted)
-        self.start_pause_button.configure(bg=accent, fg='white')
-        if hasattr(self, 'white_clock_label'):
-            self.white_clock_label.configure(bg=bg, fg=fg)
-            self.black_clock_label.configure(bg=bg, fg=fg)
+        self._apply_studio_theme(theme)
 
     def change_mode(self):
         self._cancel_search()
@@ -1447,6 +1409,7 @@ class GameController(CoachingControls, PracticeControls, GameEndings, TrainingCo
             if hasattr(self, 'black_clock_label'):
                 self.black_clock_label.config(text=self.clock.get_time_string(False))
             
+            self._refresh_player_cards()
             # Schedule next update
             self.master.after(100, self.update_clock_display)
         except Exception:

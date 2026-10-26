@@ -78,3 +78,8 @@ Checkpoint writes use compact JSON and faster gzip compression, so compressed
 memory files can be larger. Preserve the full data folder, including the journal.
 Depth, time budgets and exploration defaults are retained. See the repository
 `benchmarks/TRAINING_PERFORMANCE.md` for reproducible A/B checks and timing limits.
+
+The [visual refresh](chess/UI_GUIDE.md) adds a header theme toggle, player/clock cards,
+consistent light/dark controls and dialogs, clearer primary actions and an empty
+move-history hint. Your theme preference is saved; resizing and native text
+scrolling remain available.

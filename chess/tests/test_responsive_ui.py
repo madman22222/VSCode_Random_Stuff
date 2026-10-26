@@ -575,3 +575,74 @@ class TestResponsiveUI(unittest.TestCase):
         self.assertGreater(area.yview()[0], 0)
         self.assertEqual(len(self.app.board_view.canvases), 64)
         self.assertEqual(self.app.board.fen(), self.app.puzzles[self.app.practice_index].fen)
+
+    def test_header_theme_toggle_persists_and_dark_text_fields_are_readable(self):
+        from studio_appearance import PALETTES
+        before = self.app.board.fen()
+        self.app.theme_toggle.invoke(); self.pump()
+        self.assertEqual(self.app.theme_var.get(), 'dark')
+        self.assertEqual(self.app.move_list.cget('background'), PALETTES['dark']['field'])
+        self.assertEqual(self.app.move_list.cget('foreground'), PALETTES['dark']['text'])
+        self.app.workspace.select(self.app.practice_workspace); self.pump()
+        areas = [child for frame in self.app.practice_workspace.winfo_children()
+                 for child in frame.winfo_children() if isinstance(child, tk.Text)]
+        self.assertTrue(areas)
+        self.assertEqual(areas[0].cget('background'), PALETTES['dark']['field'])
+        self.assertEqual(ConfigManager(self.app.config.config_file).get('theme'), 'dark')
+        self.app.workspace.select(self.app.game_workspace); self.pump()
+        self.assertEqual(self.app.board.fen(), before)
+        self.app.theme_toggle.invoke(); self.pump()
+        self.assertEqual(self.app.theme_var.get(), 'light')
+
+    def test_player_cards_follow_turn_orientation_and_pause(self):
+        self.assertIn('Black', self.app.player_cards[0][1].cget('text'))
+        self.assertIn('White', self.app.player_cards[1][1].cget('text'))
+        self.assertIn('Paused', self.app.player_cards[1][2].cget('text'))
+        self.app.flip_board(); self.pump()
+        self.assertIn('White', self.app.player_cards[0][1].cget('text'))
+        from studio_appearance import PALETTES
+        for child in self.app.board_view.parent.winfo_children():
+            if isinstance(child, tk.Label):
+                self.assertEqual(child.cget('background'), PALETTES[self.app.theme_var.get()]['stage'])
+        self.app.play_mode = 'player_vs_player'; self.app.game_started = True
+        self.app.board.push_uci('e2e4'); self.app.update_board(force=True); self.pump()
+        self.assertIn('To move', self.app.player_cards[1][2].cget('text'))
+        self.assertIn('Local player', self.app.player_cards[1][1].cget('text'))
+
+    def test_empty_history_hint_hides_after_move_and_returns_after_undo(self):
+        self.assertTrue(self.app.move_list_empty.winfo_ismapped())
+        self.app.play_mode = 'player_vs_player'; self.app.game_started = True
+        self.app.board.push_uci('e2e4'); self.app.update_board(force=True); self.pump()
+        self.assertFalse(self.app.move_list_empty.winfo_ismapped())
+        self.app.undo_move(); self.pump()
+        self.assertTrue(self.app.move_list_empty.winfo_ismapped())
+
+    def test_report_dialog_uses_current_palette_and_keeps_board_state(self):
+        from studio_appearance import PALETTES
+        self.app.change_theme('dark'); self.pump()
+        before = self.app.board.fen()
+        window = self.app._text_dialog('Test report', 'A readable report.\n' * 40)
+        self.pump()
+        area = next(child for child in window.winfo_children() if isinstance(child, tk.Text))
+        self.assertEqual(area.cget('background'), PALETTES['dark']['field'])
+        self.assertEqual(area.cget('foreground'), PALETTES['dark']['text'])
+        window.destroy()
+        self.assertEqual(self.app.board.fen(), before)
+
+    def test_focused_control_keys_cannot_select_or_move_board_pieces(self):
+        from types import SimpleNamespace
+        self.app.play_mode = 'player_vs_player'
+        self.app.game_started = True
+        self.app.selected = chess.E2
+        self.app.board_view.focus_square = chess.E4
+        before = self.app.board.fen()
+        self.app.theme_toggle.focus_force()
+        self.pump()
+        with patch.object(self.app, 'on_click') as click:
+            self.app._board_keyboard(SimpleNamespace(keysym='space'))
+            self.app._board_keyboard(SimpleNamespace(keysym='Return'))
+            click.assert_not_called()
+        self.app.theme_toggle.invoke()
+        self.pump()
+        self.assertEqual(self.app.board.fen(), before)
+        self.assertEqual(self.app.selected, chess.E2)

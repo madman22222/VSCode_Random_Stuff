@@ -55,3 +55,8 @@ recovers paused. Preserve the data folder when installing a newer ZIP.
 
 See the [full guide](README.md), [reference](QUICK_REFERENCE.md), and
 [upgrade/troubleshooting guide](UPGRADES_GUIDE.md).
+
+The [visual refresh](UI_GUIDE.md) adds a header theme toggle, player/clock cards,
+consistent light/dark controls and dialogs, clearer primary actions and an empty
+move-history hint. Your theme preference is saved; resizing and native text
+scrolling remain available.

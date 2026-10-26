@@ -42,6 +42,15 @@ def run_diagnostics(report_path):
                     root.update()
                     time.sleep(.02)
             pump()
+            from studio_appearance import PALETTES
+            app.theme_toggle.invoke()
+            pump()
+            assert app.theme_var.get() == 'dark'
+            assert app.move_list.cget('background') == PALETTES['dark']['field']
+            assert 'White' in app.player_cards[1][1].cget('text')
+            app.theme_toggle.invoke()
+            pump()
+            report['checks']['visual_theme_and_player_cards'] = True
             report['checks']['tkinter_and_pillow'] = True
             app.play_mode = 'player_vs_player'
             app.game_started = True

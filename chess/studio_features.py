@@ -304,7 +304,10 @@ class StudioFeatures:
 
     def _board_keyboard(self, event):
         widget = self.master.focus_get()
-        if widget and widget.winfo_class() in ('Entry', 'TEntry', 'TCombobox', 'Text', 'Listbox', 'Scale', 'Spinbox'):
+        if widget and widget.winfo_class() in ('Entry', 'TEntry', 'TCombobox', 'Text', 'Listbox', 'Scale', 'Spinbox',
+                                               'Button', 'TButton', 'Checkbutton', 'TCheckbutton',
+                                               'Radiobutton', 'TRadiobutton', 'Menubutton', 'TMenubutton',
+                                               'TNotebook', 'Scrollbar', 'TScrollbar', 'TScale', 'TSpinbox'):
             return
         key = event.keysym
         if self._activity == 'review' and key in ('Left', 'Right', 'Home', 'End'):

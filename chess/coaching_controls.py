@@ -43,6 +43,7 @@ class CoachingControls:
         tk.Button(row, text='Inspect position before move', command=position).pack(side='left')
         tk.Button(row, text='Practice this idea', command=practice).pack(side='left', padx=8)
         tk.Button(row, text='Close', command=window.destroy).pack(side='right')
+        self._apply_studio_theme(self.theme_var.get())
         listing.focus_set()
 
     def _open_practice_id(self, puzzle_id):
