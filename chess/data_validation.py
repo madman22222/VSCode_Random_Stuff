@@ -110,6 +110,29 @@ def configuration(data):
             for key in ('due', 'last'):
                 if type(item.get(key)) not in (int, float) or not math.isfinite(item[key]) or not 0 <= item[key] <= 10**12:
                     raise ValueError('Invalid practice timestamp')
+    if 'coach_side' in data and data['coach_side'] not in ('auto', 'white', 'black', 'both'):
+        raise ValueError('Invalid coaching side')
+    if 'coach_level' in data and data['coach_level'] not in ('beginner', 'intermediate', 'advanced'):
+        raise ValueError('Invalid coaching level')
+    if 'board_palette' in data and data['board_palette'] not in ('Classic', 'Forest', 'Ocean', 'Monochrome'):
+        raise ValueError('Invalid board palette')
+    for key, low, high in (('highlight_strength', .25, 1), ('sidebar_fraction', .3, .8),
+                           ('low_time_seconds', 0, 120), ('training_workers', 1, 8),
+                           ('training_cpu_percent', 10, 100), ('checkpoint_keep', 1, 10)):
+        if key in data and (type(data[key]) not in (int, float) or not math.isfinite(data[key]) or not low <= data[key] <= high):
+            raise ValueError('Invalid study preference: ' + key)
+    for key in ('onboarding_seen', 'sidebar_hidden', 'low_time_sound'):
+        if key in data and type(data[key]) is not bool:
+            raise ValueError('Invalid study preference: ' + key)
+    if 'mastery_checks' in data:
+        rows = data['mastery_checks']
+        if not isinstance(rows, dict) or len(rows) > 100:
+            raise ValueError('Invalid mastery progress')
+        for row in rows.values():
+            if not isinstance(row, dict) or not isinstance(row.get('passed', []), list) or len(row.get('passed', [])) > 100:
+                raise ValueError('Invalid mastery record')
+            if any(not isinstance(id, str) or len(id) > 100 for id in row.get('passed', [])):
+                raise ValueError('Invalid mastery position')
     if 'statistics' in data:
         if not isinstance(data['statistics'], dict) or any(type(v) is not int or v < 0
                                                          for v in data['statistics'].values()):
@@ -146,6 +169,9 @@ def training_checkpoint(data):
                 raise ValueError(f'Invalid training setting: {name}')
     if 'varied_starts' in settings and type(settings['varied_starts']) is not bool:
         raise ValueError('Invalid varied-starts setting')
+    for key, low, high in (('workers', 1, 8), ('cpu_percent', 10, 100), ('checkpoint_keep', 1, 10)):
+        if key in settings and (type(settings[key]) is not int or not low <= settings[key] <= high):
+            raise ValueError('Invalid training resource setting')
     if 'seed' in settings and type(settings['seed']) is not int:
         raise ValueError('Invalid training seed')
     return data

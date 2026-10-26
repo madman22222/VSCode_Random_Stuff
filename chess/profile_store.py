@@ -20,10 +20,10 @@ def allowed(name):
     if not name or '\\' in name or p.is_absolute() or '..' in p.parts or ':' in name:
         return False
     if len(p.parts) == 1:
-        return (name in ('chess_config.json', 'last_session.json') or
+        return (name in ('chess_config.json', 'last_session.json', 'study.json') or
                 name.startswith(('ai_learn', 'last_session.invalid-')) and
                 name.endswith(('.json', '.json.gz')))
-    return p.parts[0] in ('profiles', 'autosaves', 'comparison-history', 'puzzle-packs') and p.suffix in ('.json', '.gz', '.pgn')
+    return p.parts[0] in ('profiles', 'autosaves', 'comparison-history', 'puzzle-packs', 'checkpoints') and p.suffix in ('.json', '.gz', '.pgn')
 
 
 class ProfileStore:
@@ -107,7 +107,7 @@ class ProfileStore:
                 files[name] = content
             from data_validation import configuration, learning_records, training_checkpoint, MAX_JSON_BYTES
             for name, content in files.items():
-                if Path(name).name.startswith('last_session.invalid-'):
+                if Path(name).name.startswith('last_session.invalid-') or '.invalid-' in Path(name).name:
                     continue  # Retained forensic bytes are never loaded as a live session.
                 if name.endswith('.gz'):
                     with gzip.GzipFile(fileobj=io.BytesIO(content)) as stream:
@@ -118,7 +118,13 @@ class ProfileStore:
                     value = json.loads(content)
                     if not isinstance(value, dict):
                         raise ValueError('Profile JSON must be an object')
-                    if name == 'chess_config.json':
+                    if name == 'study.json':
+                        from study_data import validate_study
+                        validate_study(value)
+                    elif name.startswith('checkpoints/') or '/checkpoints/' in name:
+                        from training_journal import validate_journal
+                        validate_journal(value)
+                    elif name == 'chess_config.json':
                         configuration(value)
                     elif name.endswith('.checkpoint.json'):
                         from training_journal import validate_journal
