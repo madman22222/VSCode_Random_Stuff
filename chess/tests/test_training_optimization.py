@@ -147,3 +147,19 @@ class TestTrainingOptimization(unittest.TestCase):
                 self.assertEqual(self.ai.evaluate_pawn_structure(board, color),
                                  reference_pawns(self.ai, board, color))
                 self.assertLessEqual(len(self.ai._pawn_cache), 2)
+
+    def test_masked_quiescence_keeps_capture_promotion_ep_and_evasion_order(self):
+        rng = random.Random(713)
+        board = chess.Board()
+        positions = [chess.Board('7k/P7/8/8/8/8/7p/K7 w - - 0 1'),
+                     chess.Board('7k/P7/8/8/8/8/7p/K7 b - - 0 1'),
+                     chess.Board('7k/8/8/3pP3/8/8/8/K7 w - d6 0 1'),
+                     chess.Board('4r1k1/8/8/8/8/8/3B4/4K3 w - - 0 1')]
+        for _ in range(300):
+            if board.is_game_over(claim_draw=True): board = chess.Board()
+            positions.append(board.copy())
+            board.push(rng.choice(list(board.legal_moves)))
+        for position in positions:
+            check = position.is_check()
+            expected = [m for m in position.legal_moves if check or position.is_capture(m) or m.promotion]
+            self.assertEqual(self.ai._quiescence_moves(position, check), expected, position.fen())

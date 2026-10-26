@@ -470,8 +470,7 @@ class SimpleAI:
             if stand_pat >= beta:
                 return beta
             alpha = max(alpha, stand_pat)
-        moves = [m for m in board.legal_moves
-                 if in_check or board.is_capture(m) or m.promotion]
+        moves = self._quiescence_moves(board, in_check)
         moves.sort(key=lambda m: self._move_score(board, m), reverse=True)
         for move in moves:
             board.push(move)
@@ -483,6 +482,17 @@ class SimpleAI:
                 return beta
             alpha = max(alpha, score)
         return alpha
+
+    def _quiescence_moves(self, board, in_check):
+        if in_check:
+            return list(board.legal_moves)
+        # Restrict generation, not chess legality. Preserve generator order for
+        # every capture/promotion, including en passant and underpromotions.
+        targets = board.occupied_co[not board.turn] | (chess.BB_RANK_8 if board.turn else chess.BB_RANK_1)
+        if board.ep_square is not None:
+            targets |= chess.BB_SQUARES[board.ep_square]
+        return [move for move in board.generate_legal_moves(to_mask=targets)
+                if board.is_capture(move) or move.promotion]
 
     def negamax(self, board, depth, alpha, beta):
         self._check_deadline()
