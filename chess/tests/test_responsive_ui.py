@@ -600,6 +600,10 @@ class TestResponsiveUI(unittest.TestCase):
         self.assertIn('Paused', self.app.player_cards[1][2].cget('text'))
         self.app.flip_board(); self.pump()
         self.assertIn('White', self.app.player_cards[0][1].cget('text'))
+        from studio_appearance import PALETTES
+        for child in self.app.board_view.parent.winfo_children():
+            if isinstance(child, tk.Label):
+                self.assertEqual(child.cget('background'), PALETTES[self.app.theme_var.get()]['stage'])
         self.app.play_mode = 'player_vs_player'; self.app.game_started = True
         self.app.board.push_uci('e2e4'); self.app.update_board(force=True); self.pump()
         self.assertIn('To move', self.app.player_cards[1][2].cget('text'))

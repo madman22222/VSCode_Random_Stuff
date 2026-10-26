@@ -59,6 +59,10 @@ class StudioAppearance:
         if key == getattr(self, '_player_cards_render_key', None):
             return
         self._player_cards_render_key = key
+        # Flipping/practice can recreate coordinate labels without a theme change.
+        for child in self.board_view.parent.winfo_children():
+            if child.winfo_class() == 'Label':
+                child.configure(bg=palette['stage'], fg=palette['muted'], font=(self.ui_font, 9, 'bold'))
         for color, (frame, name, state) in zip(colors, self.player_cards):
             label = 'White' if color else 'Black'
             if activity != 'game':
@@ -117,9 +121,6 @@ class StudioAppearance:
             if widget is self.board_area:
                 widget.configure(bg=p['stage'])
                 self.board_view.parent.configure(bg=p['stage'])
-                for child in self.board_view.parent.winfo_children():
-                    if child.winfo_class() == 'Label':
-                        child.configure(bg=p['stage'], fg=p['muted'], font=(self.ui_font, 9, 'bold'))
                 return
             header = header or getattr(widget, '_visual_role', '') == 'header'
             bg = '#172b24' if header else p['surface']
