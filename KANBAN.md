@@ -16,8 +16,8 @@ clearer actions, themed dialogs and an empty move-history state. The board count
 **61 delivered cards**, including the two visual/validation cards after merge.
 Both editions are rebuilt from the same shared source.
 
-The suite now contains 157 tests, including desktop cases for theme persistence,
-dark text/dialogs, orientation/turn cards and empty-history transitions. Existing
+The suite now contains 158 tests, including desktop cases for theme persistence,
+dark text/dialogs, orientation/turn cards, empty-history transitions and keyboard focus isolation. Existing
 resize, scrolling, keyboard, game isolation and training tests remain. Real Tk 8.6
 screenshots are reviewed alongside automated checks; Windows and both extracted
 editions must pass before publication. See [the visual guide](chess/UI_GUIDE.md).

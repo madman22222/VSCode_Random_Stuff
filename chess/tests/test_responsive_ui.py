@@ -628,3 +628,21 @@ class TestResponsiveUI(unittest.TestCase):
         self.assertEqual(area.cget('foreground'), PALETTES['dark']['text'])
         window.destroy()
         self.assertEqual(self.app.board.fen(), before)
+
+    def test_focused_control_keys_cannot_select_or_move_board_pieces(self):
+        from types import SimpleNamespace
+        self.app.play_mode = 'player_vs_player'
+        self.app.game_started = True
+        self.app.selected = chess.E2
+        self.app.board_view.focus_square = chess.E4
+        before = self.app.board.fen()
+        self.app.theme_toggle.focus_force()
+        self.pump()
+        with patch.object(self.app, 'on_click') as click:
+            self.app._board_keyboard(SimpleNamespace(keysym='space'))
+            self.app._board_keyboard(SimpleNamespace(keysym='Return'))
+            click.assert_not_called()
+        self.app.theme_toggle.invoke()
+        self.pump()
+        self.assertEqual(self.app.board.fen(), before)
+        self.assertEqual(self.app.selected, chess.E2)
