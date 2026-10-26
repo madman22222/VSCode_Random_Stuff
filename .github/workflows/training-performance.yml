@@ -1,0 +1,29 @@
+name: Training performance and equivalence
+on:
+  pull_request:
+    branches: [main]
+    paths: ['chess/**', 'benchmarks/**', '.github/workflows/training-performance.yml']
+  push:
+    branches: [main]
+    paths: ['chess/**', 'benchmarks/**', '.github/workflows/training-performance.yml']
+  workflow_dispatch:
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install reviewed runtime
+        run: python -m pip install -c packaging/constraints-build.txt -r chess/requirements.txt
+      - name: Profile real self-play and compare identical search budgets
+        run: python benchmarks/training_performance.py --output training-performance.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: training-performance
+          path: training-performance.json
