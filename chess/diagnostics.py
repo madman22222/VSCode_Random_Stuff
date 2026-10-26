@@ -84,6 +84,10 @@ def run_diagnostics(report_path):
             resumed = TrainingAI(SimpleAI(learning_path=temp / 'memory.json'), resume=True)
             assert resumed.games_played == 1 and resumed._recovered_memory == app.ai.learning_db
             report['checks']['training_recovery_journal'] = True
+            assert trainer.snapshot()['positions'] == len({key.split('|', 1)[0] for key in app.ai.learning_db})
+            assert len(app.ai._evaluation_cache) <= app.ai.evaluation_cache_limit
+            assert len(app.ai._pawn_cache) <= app.ai.pawn_cache_limit
+            report['checks']['optimized_training_bounds_and_counts'] = True
             report['checks']['training_and_reload'] = True
             comparison = ComparisonSeries(app.ai, games=2, depth=1, node_limit=20, max_moves=4)
             comparison.start()

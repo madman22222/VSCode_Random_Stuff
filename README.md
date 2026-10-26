@@ -84,3 +84,8 @@ authored alternative lines, review limits, independent evaluation, and recovery.
 Maintainers can run the [repeatable soak test](benchmarks/README.md) to check
 training, cancellation, memory bounds and checkpoint reloads. Physical Windows
 DPI/driver and screen-reader verification remain tracked on the [Kanban](KANBAN.md).
+
+Training now uses profiled, exact-result optimizations for pawn/evaluation work,
+quiescence generation, memory bookkeeping and checkpoint serialization. See the
+[performance checks and tradeoffs](benchmarks/TRAINING_PERFORMANCE.md). Both editions
+share these changes; download the newly rebuilt ZIPs to receive them.

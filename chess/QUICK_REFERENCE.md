@@ -97,3 +97,11 @@ changed outside the checkpoint; Start a new run keeps that newer memory.
 Review → Analyze game → Coaching moments → Practice this idea connects a game
 position to a related exercise. Practice → Adaptive practice chooses due work.
 Support & study → Comparison history → Compare trends separates incompatible runs.
+
+Training optimization update: evaluation/pawn caches are bounded and reset per
+search; bitboard calculations, legal capture/promotion generation and incremental
+position accounting preserve the existing search and learned-count semantics.
+Checkpoint writes use compact JSON and faster gzip compression, so compressed
+memory files can be larger. Preserve the full data folder, including the journal.
+Depth, time budgets and exploration defaults are retained. See the repository
+`benchmarks/TRAINING_PERFORMANCE.md` for reproducible A/B checks and timing limits.

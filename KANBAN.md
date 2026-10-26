@@ -10,19 +10,18 @@ retroactive duplicate issues.
 
 ## Current status
 
-Updated October 25, 2026: the coaching batch connects analyzed game moments to
-related practice, adds spaced reviews, expands the catalogue to nine lessons/21
-exercises, and groups comparable evaluation history. Both editions share the
-implementation. [Delivery PR #48](https://github.com/madman22222/VSCode_Random_Stuff/pull/48)
-contains validation evidence; source/desktop and both extracted-edition checks
-must pass before delivery. The board counts **56 delivered feature/planning cards**
-including these four cards once the delivery PR is merged.
+The training-performance batch in [PR #49](https://github.com/madman22222/VSCode_Random_Stuff/pull/49)
+adds exact bitboard evaluation, bounded search/pawn caches, legal quiescence
+generation, incremental position accounting and faster atomic checkpoint storage.
+Both editions share the implementation. The board counts **59 delivered cards**
+including the three optimization/measurement cards once this PR is merged.
 
-Local validation: 142 tests pass headlessly (34 require a desktop); new cases cover
-schedules, alternatives, coaching isolation, trend compatibility and upgrading old
-preferences. CI exercises the native text scrolling and synthetic scaling at
-100/125/150/200%. Physical checks remain separate. Previous reliability evidence
-includes the 1,000-cycle training/resume/cancel run in PR #47.
+Profiling found evaluation and repeated pawn scans dominant. Immutable-baseline
+A/B checks require matching moves, scores, depth, nodes, self-play outcomes and
+learned counts; Linux/Windows performance artifacts and extended soak reports
+provide measurement evidence. See [the methodology and tradeoffs](benchmarks/TRAINING_PERFORMANCE.md).
+No chess-strength gain or universal speed multiplier is claimed. Source/desktop
+and both extracted ZIP checks must pass before publication.
 
 **Three cards remain open:** #11 needs physical Windows DPI/driver checks; #22
 needs hands-on screen-reader verification; #26 needs native package work and
@@ -34,7 +33,7 @@ See [guided learning and testing limits](chess/GUIDED_LEARNING.md), the
 
 ## Board
 
-| Backlog / verification (3) | Ready (0) | In progress (0) | Review / test (0) | Done (56) |
+| Backlog / verification (3) | Ready (0) | In progress (0) | Review / test (0) | Done (59) |
 | --- | --- | --- | --- | --- |
 | **P1** [#11 Validate Windows display scaling and small-window layouts](https://github.com/madman22222/VSCode_Random_Stuff/issues/11) — external verification pending | — | — | — | [Repair GUI startup and restore the dedicated AI/training modules](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
 | **P2** [#22 Audit keyboard navigation and assistive-technology support](https://github.com/madman22222/VSCode_Random_Stuff/issues/22) — external verification pending | — | — | — | [Fix search depth, move budgets, timeout board restoration, and evaluation errors](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
@@ -92,6 +91,9 @@ See [guided learning and testing limits](chess/GUIDED_LEARNING.md), the
 | — | — | — | — | Schedule adaptive reviews from mistakes, hints and unassisted progress — [PR #48](https://github.com/madman22222/VSCode_Random_Stuff/pull/48) |
 | — | — | — | — | Expand original opening, defense and both-color endgame curriculum to nine lessons/21 exercises — [PR #48](https://github.com/madman22222/VSCode_Random_Stuff/pull/48) |
 | — | — | — | — | Compare compatible saved versions with baseline identity, uncertainty and separated settings — [PR #48](https://github.com/madman22222/VSCode_Random_Stuff/pull/48) |
+| — | — | — | — | Speed exact search/evaluation and bounded reuse without dropping rules or moves — [PR #49](https://github.com/madman22222/VSCode_Random_Stuff/pull/49) |
+| — | — | — | — | Reduce full-memory scans and checkpoint CPU while retaining atomic recovery — [PR #49](https://github.com/madman22222/VSCode_Random_Stuff/pull/49) |
+| — | — | — | — | Profile and compare immutable-baseline search/self-play/storage on Linux and Windows — [PR #49](https://github.com/madman22222/VSCode_Random_Stuff/pull/49) |
 
 ## Priorities and recommended order
 

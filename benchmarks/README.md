@@ -60,3 +60,10 @@ Reports expose the corpus SHA-256, root-memory overlap, budgets, category totals
 and per-game results. Roots may be encountered during self-play; this is an
 independent starting suite, not a permanently uncontaminated training holdout.
 A small or mostly cutoff-draw run cannot support playing-strength claims.
+
+## Training optimization verification
+
+See [training performance and correctness](TRAINING_PERFORMANCE.md) for the immutable
+baseline, exact-budget A/B checks, Linux/Windows reports, extended soak, allocation
+measurements and gzip size/CPU tradeoff. Optimization claims require matching
+moves, scores, node counts, outcomes and learned records; timing alone is insufficient.

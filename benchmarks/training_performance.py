@@ -39,7 +39,7 @@ def workloads():
 
 
 def search_sample(cls, row, nodes):
-    ai = cls(depth=3, load_learning=False)
+    ai = cls(depth=4, load_learning=False)
     board = chess.Board(row['fen'])
     before = board.fen(), list(board.move_stack)
     started = time.perf_counter()
@@ -75,11 +75,11 @@ def profile():
     print('SELF PLAY PROFILE\n' + stream.getvalue())
 
 
-def compare(repeats=5, nodes=1200):
+def compare(repeats=5, nodes=3000):
     old = reference('chess/simple_ai.py', 'reference_simple_ai').SimpleAI
     report = {'base': BASE, 'revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
               'python': platform.python_version(), 'platform': platform.platform(),
-              'repeats': repeats, 'nodes': nodes, 'search': [], 'evaluation_positions': 0}
+              'repeats': repeats, 'nodes': nodes, 'depth': 4, 'search': [], 'evaluation_positions': 0}
     rng = random.Random(718)
     board = chess.Board()
     for _ in range(1000):
@@ -108,6 +108,11 @@ def compare(repeats=5, nodes=1200):
         medians = {name: statistics.median(values) for name, values in samples.items()}
         report['search'].append({'id': row['id'], 'samples': samples, 'medians': medians,
                                  'speedup': medians['before'] / medians['after'], 'metrics': expected})
+    ratios = [item['speedup'] for item in report['search']]
+    report['summary'] = {'median_workload_speedup': statistics.median(ratios),
+                         'geometric_mean_speedup': statistics.geometric_mean(ratios),
+                         'min_workload_speedup': min(ratios), 'max_workload_speedup': max(ratios)}
+    print('SEARCH SUMMARY ' + json.dumps(report['summary']))
     print('SEARCH A/B ' + json.dumps([{k: row[k] for k in ('id', 'speedup', 'metrics')} for row in report['search']]))
     return report
 
@@ -137,7 +142,14 @@ def storage_and_training(report):
                     trainer._checkpoint()
                     samples.append(time.perf_counter() - started)
                 assert cls(learning_path=ai._learning_path).learning_db == large
-                report['checkpoint'][name] = {'samples': samples, 'median_seconds': statistics.median(samples),
+                import tracemalloc
+                tracemalloc.start()
+                try:
+                    trainer._checkpoint()
+                    _, peak = tracemalloc.get_traced_memory()
+                finally:
+                    tracemalloc.stop()
+                report['checkpoint'][name] = {'samples': samples, 'median_seconds': statistics.median(samples), 'peak_traced_bytes': peak,
                     'gzip_bytes': Path(ai._learning_path_gz).stat().st_size,
                     'journal_bytes': Path(trainer.journal_path).stat().st_size}
             finally:
