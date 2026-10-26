@@ -23,6 +23,15 @@ except Exception:
     def error(*a, **k): pass
 
 
+# Public python-chess bitboards; no private board hashes or relaxed rules.
+_ADJACENT_FILES = tuple((chess.BB_FILES[f - 1] if f else 0) |
+                        (chess.BB_FILES[f + 1] if f < 7 else 0) for f in range(8))
+_AHEAD_RANKS = {
+    chess.WHITE: tuple(sum(chess.BB_RANKS[r] for r in range(rank + 1, 8)) for rank in range(8)),
+    chess.BLACK: tuple(sum(chess.BB_RANKS[r] for r in range(rank)) for rank in range(8)),
+}
+
+
 class SimpleAI:
     """
     Advanced Chess AI with Learning Capability
@@ -64,6 +73,8 @@ class SimpleAI:
         self.depth = depth
         self.nodes_searched = 0
         self.last_move_metrics = {}
+        self._evaluation_cache = OrderedDict()
+        self.evaluation_cache_limit = 4096
         self.transposition_table = OrderedDict()
         self.transposition_limit = 40000
         self.killers = {}
@@ -95,6 +106,7 @@ class SimpleAI:
         ai.load_error = getattr(self, "load_error", None) if learning else None
         ai.use_learning = self.use_learning if learning else False
         ai.compress_learning = self.compress_learning
+        ai.evaluation_cache_limit = self.evaluation_cache_limit
         ai.transposition_limit = self.transposition_limit
         ai.learning_max_entries = self.learning_max_entries
         ai.learning_min_keep = self.learning_min_keep
@@ -156,8 +168,9 @@ class SimpleAI:
         os.close(fd)
         try:
             opener = gzip.open if compressed else open
-            with opener(temporary, 'wt', encoding='utf-8') as stream:
-                json.dump(wrapper, stream, separators=(',', ':'))
+            options = {'compresslevel': 1} if compressed else {}
+            with opener(temporary, 'wt', encoding='utf-8', **options) as stream:
+                stream.write(json.dumps(wrapper, separators=(',', ':')))
             os.replace(temporary, target)
             # Keep only the active format, so a stale gzip cannot override JSON.
             other = self._learning_path if compressed else self._learning_path_gz
@@ -291,7 +304,7 @@ class SimpleAI:
         return round(25 * (wins - losses) / (total + 10))
 
     def game_phase(self, board: chess.Board) -> int:
-        total_material = sum(len(board.pieces(pt, chess.WHITE))+len(board.pieces(pt, chess.BLACK)) for pt in [chess.QUEEN,chess.ROOK,chess.BISHOP,chess.KNIGHT])
+        total_material = chess.popcount(board.queens | board.rooks | board.bishops | board.knights)
         if total_material <= 6: return 2
         elif len(board.move_stack) < 10: return 0
         else: return 1
@@ -307,23 +320,54 @@ class SimpleAI:
     def evaluate(self, board: chess.Board) -> int:
         if board.is_checkmate(): return -9999999
         if board.is_stalemate() or board.is_insufficient_material(): return 0
-        phase = self.game_phase(board); score = 0
-        for square, piece in board.piece_map().items():
-            if piece:
-                value = self.PIECE_VALUES[piece.piece_type]
-                pos_value = self.get_piece_square_value(piece, square, phase)
-                if piece.color == chess.WHITE: score += value + pos_value
-                else: score -= value + pos_value
+        phase = self.game_phase(board)
+        score = 0
+        tables = (None, self.PAWN_TABLE, self.KNIGHT_TABLE, self.BISHOP_TABLE,
+                  self.ROOK_TABLE, self.QUEEN_TABLE,
+                  self.KING_ENDGAME_TABLE if phase == 2 else self.KING_MIDDLEGAME_TABLE)
+        for piece_type in chess.PIECE_TYPES:
+            table, value = tables[piece_type], self.PIECE_VALUES[piece_type]
+            for square in chess.scan_forward(board.pieces_mask(piece_type, chess.WHITE)):
+                score += value + table[square ^ 56]
+            for square in chess.scan_forward(board.pieces_mask(piece_type, chess.BLACK)):
+                score -= value + table[square]
         score += self.evaluate_mobility(board)
         score += self.evaluate_king_safety(board, chess.WHITE, phase)
         score -= self.evaluate_king_safety(board, chess.BLACK, phase)
         score += self.evaluate_pawn_structure(board, chess.WHITE)
         score -= self.evaluate_pawn_structure(board, chess.BLACK)
-        if len(board.pieces(chess.BISHOP, chess.WHITE)) >= 2: score += 30
-        if len(board.pieces(chess.BISHOP, chess.BLACK)) >= 2: score -= 30
+        if chess.popcount(board.bishops & board.occupied_co[chess.WHITE]) >= 2: score += 30
+        if chess.popcount(board.bishops & board.occupied_co[chess.BLACK]) >= 2: score -= 30
         return score if board.turn==chess.WHITE else -score
     def evaluate_mobility(self, board: chess.Board) -> int:
-        current_turn = board.turn; board.turn = chess.WHITE; w = board.legal_moves.count(); board.turn = chess.BLACK; b = board.legal_moves.count(); board.turn = current_turn; return (w-b)*3
+        current_turn = board.turn
+        try:
+            board.turn = chess.WHITE
+            white = board.legal_moves.count()
+            board.turn = chess.BLACK
+            black = board.legal_moves.count()
+            return (white - black) * 3
+        finally:
+            board.turn = current_turn
+
+    def _evaluate_cached(self, board):
+        # Static evaluation does not use repetition/fifty-move claims. Search
+        # checks those separately at every node. Include phase, promotion and
+        # castling/EP state so every legal-mobility input remains represented.
+        key = (board.pawns, board.knights, board.bishops, board.rooks, board.queens,
+               board.kings, board.occupied_co[chess.WHITE], board.occupied_co[chess.BLACK],
+               board.turn, board.castling_rights, board.ep_square, board.promoted,
+               board.chess960, len(board.move_stack) < 10)
+        cached = self._evaluation_cache.get(key)
+        if cached is not None:
+            return cached
+        score = self.evaluate(board)
+        if self.evaluation_cache_limit > 0:
+            if len(self._evaluation_cache) >= self.evaluation_cache_limit:
+                self._evaluation_cache.popitem(last=False)
+            self._evaluation_cache[key] = score
+        return score
+
     def evaluate_king_safety(self, board: chess.Board, color: bool, phase: int) -> int:
         if phase == 2: return 0
         score = 0; king_square = board.king(color)
@@ -346,15 +390,21 @@ class SimpleAI:
                         if p and p.piece_type == chess.PAWN: score += 10
         return score
     def evaluate_pawn_structure(self, board: chess.Board, color: bool) -> int:
-        score = 0; pawns = board.pieces(chess.PAWN, color)
-        for pawn_square in pawns:
-            pawn_file = chess.square_file(pawn_square); pawn_rank = chess.square_rank(pawn_square)
-            if self.is_passed_pawn(board, pawn_square, color):
-                score += 20 + (pawn_rank*10) if color==chess.WHITE else 20 + ((7-pawn_rank)*10)
-            same_file_count = chess.popcount(board.pawns & board.occupied_co[color] & chess.BB_FILES[pawn_file])
-            if same_file_count > 1: score -= 15
-            if self.is_isolated_pawn(board, pawn_square, color): score -= 20
-            if self.is_backward_pawn(board, pawn_square, color): score -= 10
+        pawns = board.pawns & board.occupied_co[color]
+        enemies = board.pawns & board.occupied_co[not color]
+        counts = tuple(chess.popcount(pawns & file) for file in chess.BB_FILES)
+        score = 0
+        for square in chess.scan_forward(pawns):
+            file, rank = square & 7, square >> 3
+            adjacent = _ADJACENT_FILES[file]
+            if not (enemies & (adjacent | chess.BB_FILES[file]) & _AHEAD_RANKS[color][rank]):
+                score += 20 + (rank if color else 7 - rank) * 10
+            if counts[file] > 1:
+                score -= 15
+            if not (pawns & adjacent):
+                score -= 20
+            if pawns & adjacent & _AHEAD_RANKS[not color][rank]:
+                score -= 10
         return score
     def is_passed_pawn(self, board: chess.Board, square: int, color: bool) -> bool:
         pawn_file = chess.square_file(square); pawn_rank = chess.square_rank(square); enemy_color = not color; enemy_pawns = board.pieces(chess.PAWN, enemy_color)
@@ -396,10 +446,10 @@ class SimpleAI:
             if outcome is not None:
                 return -9999999 if outcome.winner is not None else 0
         if ply >= 16:
-            return self.evaluate(board)
+            return self._evaluate_cached(board)
         in_check = board.is_check()
         if not in_check:
-            stand_pat = self.evaluate(board)
+            stand_pat = self._evaluate_cached(board)
             if stand_pat >= beta:
                 return beta
             alpha = max(alpha, stand_pat)
@@ -428,7 +478,8 @@ class SimpleAI:
         best_score = -10000000
         best_move = None
         original_alpha = alpha
-        for move in self._order_moves(board, list(board.legal_moves), depth):
+        key = board.fen()
+        for move in self._order_moves(board, list(board.legal_moves), depth, _fen=key):
             board.push(move)
             try:
                 score = -self.negamax(board, depth - 1, -beta, -alpha)
@@ -443,7 +494,6 @@ class SimpleAI:
                 break
         flag = 'UPPER' if best_score <= original_alpha else (
             'LOWER' if best_score >= beta else 'EXACT')
-        key = board.fen()
         if key not in self.transposition_table and len(self.transposition_table) >= self.transposition_limit:
             self.transposition_table.popitem(last=False)
         self.transposition_table[key] = (best_score, depth, flag, best_move.uci() if best_move else None)
@@ -452,9 +502,9 @@ class SimpleAI:
     def choose_move(self, board: chess.Board):
         return self.choose_move_iterative(board, time_limit=5.0)
 
-    def _order_moves(self, board, moves, depth):
+    def _order_moves(self, board, moves, depth, _fen=None):
         # Build position keys once rather than once for every candidate move.
-        fen = board.fen()
+        fen = board.fen() if _fen is None else _fen
         fen_key = from_fen(fen)
         entry = self.transposition_table.get(fen)
         killers = self.killers.get(depth, [])
@@ -488,13 +538,15 @@ class SimpleAI:
             return None
         start = time.monotonic()
         self.nodes_searched = 0
+        self._evaluation_cache.clear()
         self._node_limit = node_limit
         while len(self.transposition_table) > self.transposition_limit:
             self.transposition_table.popitem(last=False)
         best_move = moves[0]
         completed_depth = 0
         completed_score = None
-        fen_key = position_key(board)
+        root_fen = board.fen()
+        fen_key = from_fen(root_fen)
         priors = ({move.uci(): self.outcome_adjustment(fen_key, move.uci()) for move in moves}
                   if self.use_learning and self.use_outcome_scoring else {})
         active_prior = any(priors.values())
@@ -503,7 +555,7 @@ class SimpleAI:
             for depth in range(1, max(1, self.depth) + 1):
                 alpha, beta = -10000000, 10000000
                 current_best, best_score = None, -10000000
-                for move in self._order_moves(board, moves, depth):
+                for move in self._order_moves(board, moves, depth, _fen=root_fen):
                     self._check_deadline()
                     board.push(move)
                     try:
@@ -528,7 +580,7 @@ class SimpleAI:
             self._deadline = None
             self._node_limit = None
         if record:
-            self._log_choice(position_key(board), best_move.uci(), board.turn)
+            self._log_choice(fen_key, best_move.uci(), board.turn)
         self.last_move_metrics = {
             'move': best_move.uci(), 'depth': completed_depth,
             'nodes': self.nodes_searched, 'branching': len(moves),
@@ -548,8 +600,7 @@ class SimpleAI:
                 score += 200 + victim_value
         except Exception: pass
         try:
-            piece = board.piece_at(move.from_square)
-            if piece is not None and piece.piece_type == chess.KING:
+            if board.piece_type_at(move.from_square) == chess.KING:
                 if abs(chess.square_file(move.from_square) - chess.square_file(move.to_square)) == 2: score += 80
         except Exception: pass
         try:

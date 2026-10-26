@@ -35,13 +35,14 @@ def starting_board(rng, varied=True):
     return board
 
 
-def atomic_json(path, data):
+def atomic_json(path, data, *, compact=False):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, suffix='.tmp')
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-            json.dump(data, stream, indent=2)
+            stream.write(json.dumps(data, indent=None if compact else 2,
+                                    separators=(',', ':') if compact else None))
         os.replace(tmp, path)
     finally:
         if os.path.exists(tmp):
@@ -81,10 +82,12 @@ class TrainingAI:
         self._session_games = 0
         self._recent_results = []
         self._saved_games = 0
-        self._position_count = len({key.split('|', 1)[0] for key in self.ai.learning_db})
+        self._known_positions = {key.split('|', 1)[0] for key in self.ai.learning_db}
+        self._position_count = len(self._known_positions)
         self.state_path = self.ai._learning_path + '.training.json'
         self.journal_path = self.ai._learning_path + '.checkpoint.json'
         self._recovered_memory = None
+        self._published_fingerprint = None
         if resume:
             self._load_progress()
             self._saved_games = self.games_played
@@ -149,11 +152,15 @@ class TrainingAI:
         # compatibility writes is recoverable without guessing which counters fit.
         progress = self.snapshot()
         progress['saved_games'] = self.games_played
+        current_fingerprint = fingerprint(self.ai.learning_db)
+        previous_fingerprint = (self._published_fingerprint if self.ai._writer_lease is not None
+                                and self._published_fingerprint is not None else fingerprint(disk_records(self.ai)))
         atomic_json(self.journal_path, {'version': 1,
             'memory': {'meta': {'version': self.ai.learning_version}, 'data': self.ai.learning_db},
-            'fingerprint': fingerprint(self.ai.learning_db),
-            'previous_fingerprint': fingerprint(disk_records(self.ai)), 'progress': progress})
+            'fingerprint': current_fingerprint,
+            'previous_fingerprint': previous_fingerprint, 'progress': progress}, compact=True)
         self.ai._save_learning_db()
+        self._published_fingerprint = current_fingerprint
         previous = self._saved_games
         self._saved_games = self.games_played
         try:
@@ -166,13 +173,15 @@ class TrainingAI:
         if self.thread and self.thread.is_alive():
             return
         self.ai.acquire_writer()
+        self._published_fingerprint = None
         try:
             if self.resuming:
                 # Revalidate after taking the writer lease: construction is read-only.
                 self._load_progress()
                 if self._recovered_memory is not None:
                     self.ai.learning_db = self._recovered_memory
-                    self._position_count = len({key.split('|', 1)[0] for key in self.ai.learning_db})
+                    self._known_positions = {key.split('|', 1)[0] for key in self.ai.learning_db}
+                    self._position_count = len(self._known_positions)
                     self._saved_games = self.games_played
                     self.ai._save_learning_db()
                     atomic_json(self.state_path, self.snapshot())
@@ -239,8 +248,14 @@ class TrainingAI:
                 winner = 'draw' if outcome is None or outcome.winner is None else (
                     'white' if outcome.winner == chess.WHITE else 'black')
                 with self._lock:
+                    played_positions = {key for key, _, _ in self.ai.game_log}
+                    prune_time = self.ai._last_prune_time
                     self.ai.finalize_game(winner)
-                    self._position_count = len({key.split('|', 1)[0] for key in self.ai.learning_db})
+                    if self.ai._last_prune_time != prune_time:
+                        self._known_positions = {key.split('|', 1)[0] for key in self.ai.learning_db}
+                    else:
+                        self._known_positions.update(played_positions)
+                    self._position_count = len(self._known_positions)
                     self.results[winner] += 1
                     self._recent_results = (self._recent_results + [winner])[-20:]
                     self.games_played += 1

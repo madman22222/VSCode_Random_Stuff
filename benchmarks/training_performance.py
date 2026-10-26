@@ -112,6 +112,67 @@ def compare(repeats=5, nodes=1200):
     return report
 
 
+def records(size):
+    # Schema-valid opaque historical keys; synthetic data benchmarks I/O only.
+    return {f'position-{n}|e2e4': {'w': n % 9, 'l': n % 3, 'd': n % 7, 'ts': 1700000000}
+            for n in range(size)}
+
+
+def storage_and_training(report):
+    from unittest.mock import patch
+    old_ai = reference('chess/simple_ai.py', 'storage_reference_ai').SimpleAI
+    old_training = reference('chess/training_ai.py', 'storage_reference_training').TrainingAI
+    large = records(50000)
+    report['checkpoint'] = {}
+    for name, cls, trainer_cls in [('before', old_ai, old_training), ('after', SimpleAI, TrainingAI)]:
+        samples = []
+        with tempfile.TemporaryDirectory() as temp:
+            ai = cls(depth=1, learning_path=Path(temp) / 'memory.json')
+            ai.learning_db = copy.deepcopy(large)
+            trainer = trainer_cls(ai, depth=1)
+            ai.acquire_writer()
+            try:
+                for _ in range(5):
+                    started = time.perf_counter()
+                    trainer._checkpoint()
+                    samples.append(time.perf_counter() - started)
+                assert cls(learning_path=ai._learning_path).learning_db == large
+                report['checkpoint'][name] = {'samples': samples, 'median_seconds': statistics.median(samples),
+                    'gzip_bytes': Path(ai._learning_path_gz).stat().st_size,
+                    'journal_bytes': Path(trainer.journal_path).stat().st_size}
+            finally:
+                ai.release_writer()
+    report['training'] = {}
+    expected = None
+    for name, cls, trainer_cls in [('before', old_ai, old_training), ('after', SimpleAI, TrainingAI)]:
+        samples = []
+        for repeat in range(3):
+            with tempfile.TemporaryDirectory() as temp:
+                ai = cls(depth=2, learning_path=Path(temp) / 'memory.json')
+                ai.learning_db = copy.deepcopy(records(10000))
+                choose = ai.choose_move_iterative
+                ai.choose_move_iterative = lambda board, limit, **kw: choose(board, 30, node_limit=80, **kw)
+                trainer = trainer_cls(ai, depth=2, batch_size=3, max_games=6, max_moves=12,
+                                      exploration_rate=.2, seed=77)
+                with patch('time.time', return_value=1800000000):
+                    started = time.perf_counter()
+                    trainer.start(); trainer.thread.join(60)
+                    elapsed = time.perf_counter() - started
+                assert not trainer.running and trainer.last_error is None, trainer.last_error
+                learned = {key: {k: v for k, v in value.items() if k != 'ts'}
+                           for key, value in ai.learning_db.items()}
+                state = (trainer.games_played, trainer.results, trainer.move_limit_draws, learned)
+                if expected is None:
+                    expected = state
+                assert state == expected, (name, 'Self-play outcomes or learned counts changed')
+                assert trainer.snapshot()['positions'] == len({key.split('|', 1)[0] for key in ai.learning_db})
+                assert cls(learning_path=ai._learning_path).learning_db == ai.learning_db
+                samples.append(elapsed)
+        report['training'][name] = {'samples': samples, 'median_seconds': statistics.median(samples)}
+    print('CHECKPOINT A/B ' + json.dumps(report['checkpoint']))
+    print('SELF PLAY A/B ' + json.dumps(report['training']))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', required=True)
@@ -119,6 +180,8 @@ def main():
     args = parser.parse_args()
     profile()
     report = {'profile_only': True} if args.profile_only else compare()
+    if not args.profile_only:
+        storage_and_training(report)
     Path(args.output).write_text(json.dumps(report, indent=2) + '\n')
 
 
