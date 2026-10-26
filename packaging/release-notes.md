@@ -46,3 +46,11 @@ material. Nine lessons/21 exercises include opening principles, defense and more
 endgames. Comparison history groups compatible protocol-2 runs with uncertainty,
 baseline identity and cutoff draws. Native scrollable explanations keep long text
 usable. Physical monitor/screen-reader checks still require hands-on verification.
+
+Training/search optimizations reuse exact evaluation and pawn results, speed pawn
+and material calculations, and generate legal tactical continuations directly.
+Training position accounting and atomic checkpoint serialization are faster.
+Gzip level 1 trades larger compressed memory for lower save CPU. Depth, rules,
+exploration and learning counts are preserved; both editions receive the same
+changes. Profiling, exact-budget comparisons, recovery tests and extended soak
+reports document behavior and hardware-dependent performance.

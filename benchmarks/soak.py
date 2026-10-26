@@ -50,6 +50,8 @@ def run(cycles):
                 probe = SimpleAI(learning_path=path)
                 probe.acquire_writer()
                 probe.release_writer()
+                assert len(ai._evaluation_cache) <= ai.evaluation_cache_limit
+                assert len(ai._pawn_cache) <= ai.pawn_cache_limit
                 assert len(ai.transposition_table) <= ai.transposition_limit
                 assert len(ai.learning_db) <= ai.learning_max_entries
                 del worker, cancel, ai, probe

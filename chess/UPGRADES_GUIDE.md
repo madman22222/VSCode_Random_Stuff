@@ -103,3 +103,11 @@ protocol-2 evaluation trends. Existing solved progress is retained. Preserve
 `chess_config.json` with the complete data folder to keep the new practice schedule.
 Physical Windows scaling, screen-reader and owner-profile upgrade checks remain
 unverified; use the manual checklist and retain a backup.
+
+Training optimization update: evaluation/pawn caches are bounded and reset per
+search; bitboard calculations, legal capture/promotion generation and incremental
+position accounting preserve the existing search and learned-count semantics.
+Checkpoint writes use compact JSON and faster gzip compression, so compressed
+memory files can be larger. Preserve the full data folder, including the journal.
+Depth, time budgets and exploration defaults are retained. See the repository
+`benchmarks/TRAINING_PERFORMANCE.md` for reproducible A/B checks and timing limits.

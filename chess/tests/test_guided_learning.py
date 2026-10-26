@@ -178,10 +178,10 @@ worker._checkpoint()
         self.finish(trainer)
         trainer.games_played += 1; trainer.results['draw'] += 1
         from training_ai import atomic_json
-        def interrupt_progress(path, data):
+        def interrupt_progress(path, data, **kwargs):
             if str(path) == trainer.state_path:
                 raise OSError('interrupted progress publication')
-            return atomic_json(path, data)
+            return atomic_json(path, data, **kwargs)
         with patch('training_ai.atomic_json', side_effect=interrupt_progress):
             with self.assertRaises(OSError): trainer._checkpoint()
         pending = TrainingAI(SimpleAI(learning_path=self.path), resume=True)
