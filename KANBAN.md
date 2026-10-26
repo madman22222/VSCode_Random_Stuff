@@ -10,18 +10,18 @@ retroactive duplicate issues.
 
 ## Current status
 
-The training-performance batch in [PR #49](https://github.com/madman22222/VSCode_Random_Stuff/pull/49)
-adds exact bitboard evaluation, bounded search/pawn caches, legal quiescence
-generation, incremental position accounting and faster atomic checkpoint storage.
-Both editions share the implementation. The board counts **59 delivered cards**
-including the three optimization/measurement cards once this PR is merged.
+The visual refresh in [PR #50](https://github.com/madman22222/VSCode_Random_Stuff/pull/50)
+adds a shared light/dark visual system, header theme toggle, player/clock cards,
+clearer actions, themed dialogs and an empty move-history state. The board counts
+**61 delivered cards**, including the two visual/validation cards after merge.
+Both editions are rebuilt from the same shared source.
 
-Profiling found evaluation and repeated pawn scans dominant. Immutable-baseline
-A/B checks require matching moves, scores, depth, nodes, self-play outcomes and
-learned counts; Linux/Windows performance artifacts and extended soak reports
-provide measurement evidence. See [the methodology and tradeoffs](benchmarks/TRAINING_PERFORMANCE.md).
-No chess-strength gain or universal speed multiplier is claimed. Source/desktop
-and both extracted ZIP checks must pass before publication.
+The suite now contains 157 tests, including desktop cases for theme persistence,
+dark text/dialogs, orientation/turn cards and empty-history transitions. Existing
+resize, scrolling, keyboard, game isolation and training tests remain. Real Tk 8.6
+screenshots are reviewed alongside automated checks; Windows and both extracted
+editions must pass before publication. See [the visual guide](chess/UI_GUIDE.md).
+Performance evidence from PR #49 remains valid; no search/training rules change.
 
 **Three cards remain open:** #11 needs physical Windows DPI/driver checks; #22
 needs hands-on screen-reader verification; #26 needs native package work and
@@ -33,7 +33,7 @@ See [guided learning and testing limits](chess/GUIDED_LEARNING.md), the
 
 ## Board
 
-| Backlog / verification (3) | Ready (0) | In progress (0) | Review / test (0) | Done (59) |
+| Backlog / verification (3) | Ready (0) | In progress (0) | Review / test (0) | Done (61) |
 | --- | --- | --- | --- | --- |
 | **P1** [#11 Validate Windows display scaling and small-window layouts](https://github.com/madman22222/VSCode_Random_Stuff/issues/11) — external verification pending | — | — | — | [Repair GUI startup and restore the dedicated AI/training modules](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
 | **P2** [#22 Audit keyboard navigation and assistive-technology support](https://github.com/madman22222/VSCode_Random_Stuff/issues/22) — external verification pending | — | — | — | [Fix search depth, move budgets, timeout board restoration, and evaluation errors](https://github.com/madman22222/VSCode_Random_Stuff/pull/3) |
@@ -94,6 +94,8 @@ See [guided learning and testing limits](chess/GUIDED_LEARNING.md), the
 | — | — | — | — | Speed exact search/evaluation and bounded reuse without dropping rules or moves — [PR #49](https://github.com/madman22222/VSCode_Random_Stuff/pull/49) |
 | — | — | — | — | Reduce full-memory scans and checkpoint CPU while retaining atomic recovery — [PR #49](https://github.com/madman22222/VSCode_Random_Stuff/pull/49) |
 | — | — | — | — | Profile and compare immutable-baseline search/self-play/storage on Linux and Windows — [PR #49](https://github.com/madman22222/VSCode_Random_Stuff/pull/49) |
+| — | — | — | — | Shared visual system, header theme switch, player/clock cards and clearer game actions — [PR #50](https://github.com/madman22222/VSCode_Random_Stuff/pull/50) |
+| — | — | — | — | Verify dark fields/dialogs, theme persistence, orientation cards and native layout/scroll behavior — [PR #50](https://github.com/madman22222/VSCode_Random_Stuff/pull/50) |
 
 ## Priorities and recommended order
 

@@ -216,6 +216,7 @@ class StudioTools:
         tk.Button(window, text='Delete selected history report…', command=delete).pack(fill='x')
         tk.Label(window, text='History is isolated per training profile. No reports yet.' if not choices else
                  'Reports include budgets, outcomes and memory fingerprints.').pack()
+        self._apply_studio_theme(self.theme_var.get())
 
     def _text_dialog(self, title, content, extension='.txt'):
         window = tk.Toplevel(self.master)
@@ -233,6 +234,7 @@ class StudioTools:
                 except OSError as exc:
                     self._tool_error('Export failed', exc)
         tk.Button(window, text='Export this report…', command=save).pack(fill='x')
+        self._apply_studio_theme(self.theme_var.get())
         return window
 
     def _support_dialog(self):

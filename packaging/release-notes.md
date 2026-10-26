@@ -54,3 +54,10 @@ Gzip level 1 trades larger compressed memory for lower save CPU. Depth, rules,
 exploration and learning counts are preserved; both editions receive the same
 changes. Profiling, exact-budget comparisons, recovery tests and extended soak
 reports document behavior and hardware-dependent performance.
+
+Visual refresh: warm neutral/emerald styling, a complete dark palette, header
+theme switching, and player cards with role, turn, pause and clock information.
+The move list has a helpful empty state; primary actions are easier to spot.
+Menus, fields, explanations and report/coaching dialogs share the same theme.
+Both editions retain responsive boards and native scrolling. Preserve data/
+when upgrading. Actual Windows display/screen-reader verification remains open.
